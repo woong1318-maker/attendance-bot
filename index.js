@@ -11,10 +11,17 @@ const supabase = createClient(
 );
 
 // =====================
-// 시간 기준 (07:52 컷오프)
+// 🇰🇷 KST 기준 시간
 // =====================
-function getGameDay(date) {
-  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+function getKSTNow() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000);
+}
+
+// =====================
+// 🇰🇷 게임 날짜 (07:52 리셋 기준)
+// =====================
+function getGameDay() {
+  const kst = getKSTNow();
 
   let y = kst.getUTCFullYear();
   let m = kst.getUTCMonth();
@@ -23,6 +30,7 @@ function getGameDay(date) {
   const h = kst.getUTCHours();
   const min = kst.getUTCMinutes();
 
+  // 07:52 이전이면 전날 처리
   if (h < 7 || (h === 7 && min < 52)) {
     const prev = new Date(Date.UTC(y, m, d - 1));
     y = prev.getUTCFullYear();
@@ -35,6 +43,16 @@ function getGameDay(date) {
     month: `${y}-${String(m + 1).padStart(2, "0")}`,
     year: `${y}`
   };
+}
+
+// =====================
+// 🇰🇷 시간 표시
+// =====================
+function getKSTTime() {
+  const kst = getKSTNow();
+  const hh = String(kst.getUTCHours()).padStart(2, "0");
+  const mm = String(kst.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 // =====================
@@ -54,8 +72,7 @@ const server = http.createServer(async (req, res) => {
   const path = parsed.pathname;
   const user = cleanName(parsed.query.user);
 
-  const now = new Date();
-  const game = getGameDay(now);
+  const game = getGameDay();
 
   const today = game.date;
   const thisMonth = game.month;
@@ -69,18 +86,13 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
-    // 1️⃣ 오늘 이미 출석했는지 확인
-    const { data: already, error: checkError } = await supabase
+    // 오늘 중복 체크
+    const { data: already } = await supabase
       .from("attendance")
       .select("id")
       .eq("username", user)
       .eq("date", today)
       .limit(1);
-
-    if (checkError) {
-      console.log(checkError);
-      return res.end("서버 오류");
-    }
 
     if (already && already.length > 0) {
       const { count } = await supabase
@@ -94,8 +106,8 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
-    // 2️⃣ insert (streak 없음)
-    const { error: insertError } = await supabase
+    // 저장
+    const { error } = await supabase
       .from("attendance")
       .insert([
         {
@@ -107,23 +119,19 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
-    if (insertError) {
-      console.log("INSERT ERROR:", insertError);
+    if (error) {
+      console.log("INSERT ERROR:", error);
       return res.end("출석 저장 실패");
     }
 
-    // 3️⃣ 월 카운트
+    // 월 카운트
     const { count } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", user)
       .eq("month", thisMonth);
 
-    const time = now.toLocaleTimeString("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    });
+    const time = getKSTTime();
 
     return res.end(
       `🌸${user}🌸 ${time} 출첵완료 (${monthNumber}월 ${count || 0}회)`
