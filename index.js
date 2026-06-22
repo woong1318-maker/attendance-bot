@@ -6,8 +6,8 @@ const { createClient } = require("@supabase/supabase-js");
 // Supabase 연결
 // =====================
 const supabase = createClient(
-  "https://zqiveaqivdrkjbxqcfwf.supabase.co",
-  "YOUR_SUPABASE_KEY"
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
 );
 
 // =====================
