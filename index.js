@@ -3,7 +3,7 @@ const url = require("url");
 const { createClient } = require("@supabase/supabase-js");
 
 // =====================
-// Supabase 연결
+// Supabase
 // =====================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -11,7 +11,7 @@ const supabase = createClient(
 );
 
 // =====================
-// 시간 처리 (07:52 기준)
+// 시간 기준 (07:52 컷오프)
 // =====================
 function getGameDay(date) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -30,11 +30,9 @@ function getGameDay(date) {
     d = prev.getUTCDate();
   }
 
-  const mm = String(m + 1).padStart(2, "0");
-
   return {
-    date: `${y}-${mm}-${String(d).padStart(2, "0")}`,
-    month: `${y}-${mm}`,
+    date: `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+    month: `${y}-${String(m + 1).padStart(2, "0")}`,
     year: `${y}`
   };
 }
@@ -47,12 +45,12 @@ function cleanName(name) {
 }
 
 // =====================
-// streak 계산 (진짜 개근)
+// streak 계산
 // =====================
 function calcStreak(dates) {
   if (!dates.length) return 0;
 
-  const sorted = [...dates].sort().reverse(); // 최신 → 과거
+  const sorted = [...dates].sort().reverse();
 
   let streak = 1;
 
@@ -86,89 +84,77 @@ const server = http.createServer(async (req, res) => {
   const thisMonth = game.month;
   const thisYear = game.year;
 
+  const monthNumber = Number(thisMonth.split("-")[1]);
+
   // ==================================================
-  // 1️⃣ 출석 (/attend)
+  // 1️⃣ 출석
   // ==================================================
-if (path === "/attend") {
-  if (!user) return res.end("유저 없음");
+  if (path === "/attend") {
+    if (!user) return res.end("유저 없음");
 
-  // 1️⃣ 오늘 이미 출석했는지 먼저 확인 (핵심)
-  const { data: already, error: checkError } = await supabase
-    .from("attendance")
-    .select("id")
-    .eq("username", user)
-    .eq("date", today)
-    .limit(1);
+    // streak 계산용 기존 데이터
+    const { data: all } = await supabase
+      .from("attendance")
+      .select("date")
+      .eq("username", user);
 
-  if (checkError) {
-    console.log(checkError);
-    return res.end("서버 오류");
-  }
+    const dates = all?.map(v => v.date) ?? [];
+    const streak = calcStreak([...dates, today]);
 
-  // 2️⃣ 이미 출석한 경우 즉시 종료
-  if (already && already.length > 0) {
+    // insert (DB에서 중복 차단됨)
+    const { error } = await supabase
+      .from("attendance")
+      .insert([
+        {
+          username: user,
+          date: today,
+          month: thisMonth,
+          year: thisYear,
+          time: Date.now(),
+          streak
+        }
+      ]);
+
+    // 🔥 중복 출석 처리
+    if (error) {
+      if (error.code === "23505") {
+        const { count } = await supabase
+          .from("attendance")
+          .select("*", { count: "exact", head: true })
+          .eq("username", user)
+          .eq("month", thisMonth);
+
+        return res.end(
+          `🌸${user}🌸 오늘 이미 출석 완료 (${monthNumber}월 ${count || 0}회)`
+        );
+      }
+
+      console.log(error);
+      return res.end("출석 저장 실패");
+    }
+
+    // 월 카운트
     const { count } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", user)
       .eq("month", thisMonth);
 
+    const time = now.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+
+    const streakText = streak >= 2 ? `🔥${streak}일 연속 ` : "";
+
     return res.end(
-      `🌸${user}🌸 오늘 이미 출석 완료 (${monthNumber}월 ${count || 0}회)`
+      `🌸${user}🌸 ${time} ${streakText}출첵완료 (${monthNumber}월 ${count || 0}회)`
     );
   }
 
-  // 3️⃣ streak 계산용 기존 데이터
-  const { data: all } = await supabase
-    .from("attendance")
-    .select("date")
-    .eq("username", user);
-
-  const dates = all?.map(v => v.date) || [];
-
-  const streak = calcStreak([...dates, today]);
-
-  // 4️⃣ insert (에러 체크 필수)
-  const { error: insertError } = await supabase
-    .from("attendance")
-    .insert([
-      {
-        username: user,
-        date: today,
-        month: thisMonth,
-        year: thisYear,
-        time: Date.now(),
-        streak
-      }
-    ]);
-
-  if (insertError) {
-    console.log(insertError);
-    return res.end("출석 저장 실패");
-  }
-
-  // 5️⃣ 월 카운트 (안전 count 방식)
-  const { count } = await supabase
-    .from("attendance")
-    .select("*", { count: "exact", head: true })
-    .eq("username", user)
-    .eq("month", thisMonth);
-
-  const time = now.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
-
-  const streakText = streak >= 2 ? `🔥${streak}일 연속 ` : "";
-
-  return res.end(
-    `🌸${user}🌸 ${time} ${streakText}출첵완료 (${monthNumber}월 ${count || 0}회)`
-  );
-}
-
   // ==================================================
-  // 2️⃣ 출석확인 (/check)
+  // 2️⃣ 체크
   // ==================================================
   if (path === "/check") {
     const { data: monthData } = await supabase
@@ -183,7 +169,7 @@ if (path === "/attend") {
 
     const makeRank = (data) => {
       const count = {};
-      data.forEach(d => {
+      (data ?? []).forEach(d => {
         count[d.username] = (count[d.username] || 0) + 1;
       });
       return Object.entries(count).sort((a, b) => b[1] - a[1]);
@@ -198,16 +184,13 @@ if (path === "/attend") {
     const monthRankPos = monthRank.findIndex(v => v[0] === user) + 1;
     const yearRankPos = yearRank.findIndex(v => v[0] === user) + 1;
 
-    const monthText = `${Number(thisMonth.split("-")[1])}월`;
-    const yearText = `${thisYear.slice(2)}년`;
-
     return res.end(
-      `🌸${user}🌸 ${monthText} ${monthCount}회(${monthRankPos}등), ${yearText} ${yearCount}회(${yearRankPos}등)`
+      `🌸${user}🌸 ${thisMonth} ${monthCount}회(${monthRankPos}등), ${thisYear.slice(2)}년 ${yearCount}회(${yearRankPos}등)`
     );
   }
 
   // ==================================================
-  // 3️⃣ 월랭킹 (/rank)
+  // 3️⃣ 월랭킹
   // ==================================================
   if (path === "/rank") {
     const { data } = await supabase
@@ -216,7 +199,7 @@ if (path === "/attend") {
       .eq("month", thisMonth);
 
     const count = {};
-    data.forEach(d => {
+    (data ?? []).forEach(d => {
       count[d.username] = (count[d.username] || 0) + 1;
     });
 
@@ -224,18 +207,16 @@ if (path === "/attend") {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    const monthText = `${Number(thisMonth.split("-")[1])}월`;
-
     const medals = ["🥇", "🥈", "🥉"];
 
     return res.end(
-      `🏆${monthText} TOP3：` +
+      `🏆${thisMonth} TOP3：` +
       top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join("、")
     );
   }
 
   // ==================================================
-  // 4️⃣ 연간랭킹 (/legend)
+  // 4️⃣ 연간랭킹
   // ==================================================
   if (path === "/legend") {
     const { data } = await supabase
@@ -244,7 +225,7 @@ if (path === "/attend") {
       .eq("year", thisYear);
 
     const count = {};
-    data.forEach(d => {
+    (data ?? []).forEach(d => {
       count[d.username] = (count[d.username] || 0) + 1;
     });
 
@@ -252,12 +233,10 @@ if (path === "/attend") {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    const yearText = `👑${thisYear.slice(2)}`;
-
     const medals = ["🥇", "🥈", "🥉"];
 
     return res.end(
-      `${yearText} TOP3：` +
+      `👑${thisYear.slice(2)} TOP3：` +
       top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join("、")
     );
   }
