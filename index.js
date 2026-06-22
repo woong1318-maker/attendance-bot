@@ -114,6 +114,7 @@ const server = http.createServer(async (req, res) => {
           streak
         }
       ]);
+console.log("INSERT ERROR:", error);
 
     // 🔥 중복 출석 처리
     if (error) {
