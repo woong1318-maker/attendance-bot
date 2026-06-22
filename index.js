@@ -45,29 +45,6 @@ function cleanName(name) {
 }
 
 // =====================
-// streak 계산
-// =====================
-function calcStreak(dates) {
-  if (!dates.length) return 0;
-
-  const sorted = [...dates].sort().reverse();
-
-  let streak = 1;
-
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const cur = new Date(sorted[i]);
-    const prev = new Date(sorted[i + 1]);
-
-    const diff = (cur - prev) / (1000 * 60 * 60 * 24);
-
-    if (diff === 1) streak++;
-    else break;
-  }
-
-  return streak;
-}
-
-// =====================
 // 서버
 // =====================
 const server = http.createServer(async (req, res) => {
@@ -92,17 +69,33 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
-    // streak 계산용 기존 데이터
-    const { data: all } = await supabase
+    // 1️⃣ 오늘 이미 출석했는지 확인
+    const { data: already, error: checkError } = await supabase
       .from("attendance")
-      .select("date")
-      .eq("username", user);
+      .select("id")
+      .eq("username", user)
+      .eq("date", today)
+      .limit(1);
 
-    const dates = all?.map(v => v.date) ?? [];
-    const streak = calcStreak([...dates, today]);
+    if (checkError) {
+      console.log(checkError);
+      return res.end("서버 오류");
+    }
 
-    // insert (DB에서 중복 차단됨)
-    const { error } = await supabase
+    if (already && already.length > 0) {
+      const { count } = await supabase
+        .from("attendance")
+        .select("*", { count: "exact", head: true })
+        .eq("username", user)
+        .eq("month", thisMonth);
+
+      return res.end(
+        `🌸${user}🌸 오늘 이미 출석 완료 (${monthNumber}월 ${count || 0}회)`
+      );
+    }
+
+    // 2️⃣ insert (streak 없음)
+    const { error: insertError } = await supabase
       .from("attendance")
       .insert([
         {
@@ -110,31 +103,16 @@ const server = http.createServer(async (req, res) => {
           date: today,
           month: thisMonth,
           year: thisYear,
-          time: Date.now(),
-          streak
+          time: Date.now()
         }
       ]);
-console.log("INSERT ERROR:", error);
 
-    // 🔥 중복 출석 처리
-    if (error) {
-      if (error.code === "23505") {
-        const { count } = await supabase
-          .from("attendance")
-          .select("*", { count: "exact", head: true })
-          .eq("username", user)
-          .eq("month", thisMonth);
-
-        return res.end(
-          `🌸${user}🌸 오늘 이미 출석 완료 (${monthNumber}월 ${count || 0}회)`
-        );
-      }
-
-      console.log(error);
+    if (insertError) {
+      console.log("INSERT ERROR:", insertError);
       return res.end("출석 저장 실패");
     }
 
-    // 월 카운트
+    // 3️⃣ 월 카운트
     const { count } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
@@ -147,10 +125,8 @@ console.log("INSERT ERROR:", error);
       hour12: false
     });
 
-    const streakText = streak >= 2 ? `🔥${streak}일 연속 ` : "";
-
     return res.end(
-      `🌸${user}🌸 ${time} ${streakText}출첵완료 (${monthNumber}월 ${count || 0}회)`
+      `🌸${user}🌸 ${time} 출첵완료 (${monthNumber}월 ${count || 0}회)`
     );
   }
 
