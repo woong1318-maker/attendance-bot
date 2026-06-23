@@ -65,105 +65,153 @@ const server = http.createServer(async (req, res) => {
   // =====================
   // 1️⃣ 출석
   // =====================
-  if (path === "/attend") {
-    if (!user) return res.end("유저 없음");
+if (path === "/attend") {
+if (!user) return res.end("유저 없음");
 
-    // 오늘 출석 여부
-    const { data: already } = await supabase
-      .from("attendance")
-      .select("id")
-      .eq("username", user)
-      .eq("date", today);
+// 오늘 출석 여부
+const { data: already } = await supabase
+.from("attendance")
+.select("id")
+.eq("username", user)
+.eq("date", today);
 
-    if (already && already.length > 0) {
-      const { count } = await supabase
-        .from("attendance")
-        .select("*", { count: "exact", head: true })
-        .eq("username", user)
-        .eq("month", thisMonth);
+// =====================
+// 이미 출석한 경우
+// =====================
+if (already && already.length > 0) {
 
-      return res.end(
-        `🌸${user}🌸 오늘 이미 출석 완료 (${monthNumber}월 ${count || 0}회)`
-      );
-    }
+```
+const { count } = await supabase
+  .from("attendance")
+  .select("*", { count: "exact", head: true })
+  .eq("username", user)
+  .eq("month", thisMonth);
 
-    // 저장
-    await supabase.from("attendance").insert([
-      {
-        username: user,
-        date: today,
-        month: thisMonth,
-        year: thisYear,
-        time: Date.now()
-      }
-    ]);
+const now = getKSTNow();
+let hour = now.getUTCHours();
+let min = now.getUTCMinutes();
 
-    // 월 출석 수
-    const { count } = await supabase
-      .from("attendance")
-      .select("*", { count: "exact", head: true })
-      .eq("username", user)
-      .eq("month", thisMonth);
+const ampm = hour >= 12 ? "PM" : "AM";
+const hour12 = hour % 12 || 12;
 
-    // =====================
-    // 시간 포맷
-    // =====================
-    const now = getKSTNow();
-    let hour = now.getUTCHours();
-    let min = now.getUTCMinutes();
+const timeStr =
+  `${String(hour12).padStart(2, "0")}:` +
+  `${String(min).padStart(2, "0")}${ampm}`;
 
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const hour12 = hour % 12 || 12;
+const getYesterday = (dateStr) => {
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+};
 
-    const timeStr =
-      `${String(hour12).padStart(2, "0")}:` +
-      `${String(min).padStart(2, "0")}${ampm}`;
+const { data: allLogs } = await supabase
+  .from("attendance")
+  .select("date")
+  .eq("username", user);
 
-    // =====================
-    // streak 계산 (전체 날짜 기준, 월/년 무관)
-    // =====================
-    const getYesterday = (dateStr) => {
-      const d = new Date(dateStr);
-      d.setUTCDate(d.getUTCDate() - 1);
-      return d.toISOString().slice(0, 10);
-    };
+const dateSet = new Set((allLogs ?? []).map(v => v.date));
 
-    const { data: allLogs } = await supabase
-      .from("attendance")
-      .select("date")
-      .eq("username", user);
+let streak = 1;
+let checkDate = today;
 
-    const dateSet = new Set((allLogs ?? []).map(v => v.date));
+while (true) {
+  const prev = getYesterday(checkDate);
 
-    let streak = 1;
-    let checkDate = today;
-
-    while (true) {
-      const prev = getYesterday(checkDate);
-      if (dateSet.has(prev)) {
-        streak++;
-        checkDate = prev;
-      } else {
-        break;
-      }
-    }
-
-    // =====================
-    // 출력 포맷
-    // =====================
-    let streakMsg = "";
-
-    if (streak >= 2) {
-      streakMsg = ` 🔥${streak}일 연속출첵`;
-    }
-
-    const message =
-      streak >= 2
-        ? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-        : `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
-
-    return res.end(message);
+  if (dateSet.has(prev)) {
+    streak++;
+    checkDate = prev;
+  } else {
+    break;
   }
+}
+
+const message =
+  streak >= 2
+    ? `🌸${user}🌸 [${timeStr} 🔥${streak}일 연속출첵완료 확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+    : `🌸${user}🌸 [${timeStr} 출첵완료 확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+
+return res.end(message);
+```
+
+}
+
+// =====================
+// 새 출석 저장
+// =====================
+await supabase.from("attendance").insert([
+{
+username: user,
+date: today,
+month: thisMonth,
+year: thisYear,
+time: Date.now()
+}
+]);
+
+// 월 출석 수
+const { count } = await supabase
+.from("attendance")
+.select("*", { count: "exact", head: true })
+.eq("username", user)
+.eq("month", thisMonth);
+
+// 시간 포맷
+const now = getKSTNow();
+let hour = now.getUTCHours();
+let min = now.getUTCMinutes();
+
+const ampm = hour >= 12 ? "PM" : "AM";
+const hour12 = hour % 12 || 12;
+
+const timeStr =
+`${String(hour12).padStart(2, "0")}:` +
+`${String(min).padStart(2, "0")}${ampm}`;
+
+// 연속출석 계산
+const getYesterday = (dateStr) => {
+const d = new Date(dateStr);
+d.setUTCDate(d.getUTCDate() - 1);
+return d.toISOString().slice(0, 10);
+};
+
+const { data: allLogs } = await supabase
+.from("attendance")
+.select("date")
+.eq("username", user);
+
+const dateSet = new Set((allLogs ?? []).map(v => v.date));
+
+let streak = 1;
+let checkDate = today;
+
+while (true) {
+const prev = getYesterday(checkDate);
+
+```
+if (dateSet.has(prev)) {
+  streak++;
+  checkDate = prev;
+} else {
+  break;
+}
+```
+
+}
+
+let streakMsg = "";
+
+if (streak >= 2) {
+streakMsg = ` 🔥${streak}일 연속출첵완료`;
+}
+
+const message =
+streak >= 2
+? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+: `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+
+return res.end(message);
+}
+
 
   // =====================
   // 2️⃣ 개인 체크
