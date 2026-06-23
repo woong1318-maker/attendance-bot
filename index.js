@@ -18,7 +18,7 @@ function getKSTNow() {
 }
 
 // =====================
-// 🇰🇷 게임 날짜 (07:52 리셋 기준)
+// 게임 날짜 (07:52 리셋 기준)
 // =====================
 function getGameDay() {
   const kst = getKSTNow();
@@ -30,7 +30,6 @@ function getGameDay() {
   const h = kst.getUTCHours();
   const min = kst.getUTCMinutes();
 
-  // 07:52 이전이면 전날 처리
   if (h < 7 || (h === 7 && min < 52)) {
     const prev = new Date(Date.UTC(y, m, d - 1));
     y = prev.getUTCFullYear();
@@ -46,13 +45,11 @@ function getGameDay() {
 }
 
 // =====================
-// 🇰🇷 시간 표시
+// 시간
 // =====================
 function getKSTTime() {
   const kst = getKSTNow();
-  const hh = String(kst.getUTCHours()).padStart(2, "0");
-  const mm = String(kst.getUTCMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+  return `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
 }
 
 // =====================
@@ -80,13 +77,12 @@ const server = http.createServer(async (req, res) => {
 
   const monthNumber = Number(thisMonth.split("-")[1]);
 
-  // ==================================================
+  // =====================
   // 1️⃣ 출석
-  // ==================================================
+  // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
-    // 오늘 중복 체크
     const { data: already } = await supabase
       .from("attendance")
       .select("id")
@@ -106,41 +102,30 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
-    // 저장
-    const { error } = await supabase
-      .from("attendance")
-      .insert([
-        {
-          username: user,
-          date: today,
-          month: thisMonth,
-          year: thisYear,
-          time: Date.now()
-        }
-      ]);
+    await supabase.from("attendance").insert([
+      {
+        username: user,
+        date: today,
+        month: thisMonth,
+        year: thisYear,
+        time: Date.now()
+      }
+    ]);
 
-    if (error) {
-      console.log("INSERT ERROR:", error);
-      return res.end("출석 저장 실패");
-    }
-
-    // 월 카운트
     const { count } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", user)
       .eq("month", thisMonth);
 
-    const time = getKSTTime();
-
     return res.end(
-      `🌸${user}🌸 ${time} 출첵완료 (${monthNumber}월 ${count || 0}회)`
+      `🌸${user}🌸 ${getKSTTime()} 출첵완료 (${monthNumber}월 ${count || 0}회)`
     );
   }
 
-  // ==================================================
+  // =====================
   // 2️⃣ 체크
-  // ==================================================
+  // =====================
   if (path === "/check") {
     const { data: monthData } = await supabase
       .from("attendance")
@@ -170,13 +155,13 @@ const server = http.createServer(async (req, res) => {
     const yearRankPos = yearRank.findIndex(v => v[0] === user) + 1;
 
     return res.end(
-      `🌸${user}🌸 ${thisMonth} ${monthCount}회(${monthRankPos}등), ${thisYear.slice(2)}년 ${yearCount}회(${yearRankPos}등)`
+      `🌸${user}🌸 ${monthNumber}월 ${monthCount}회(${monthRankPos}등), 올해 ${yearCount}회(${yearRankPos}등)`
     );
   }
 
-  // ==================================================
-  // 3️⃣ 월랭킹
-  // ==================================================
+  // =====================
+  // 3️⃣ 월 랭킹
+  // =====================
   if (path === "/rank") {
     const { data } = await supabase
       .from("attendance")
@@ -193,16 +178,17 @@ const server = http.createServer(async (req, res) => {
       .slice(0, 3);
 
     const medals = ["🥇", "🥈", "🥉"];
+    const monthLabel = `${monthNumber}월`;
 
     return res.end(
-      `🏆${thisMonth} TOP3：` +
-      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join("、")
+      `${monthLabel} 랭킹 TOP3：` +
+      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
     );
   }
 
-  // ==================================================
-  // 4️⃣ 연간랭킹
-  // ==================================================
+  // =====================
+  // 4️⃣ 연간 랭킹
+  // =====================
   if (path === "/legend") {
     const { data } = await supabase
       .from("attendance")
@@ -221,8 +207,8 @@ const server = http.createServer(async (req, res) => {
     const medals = ["🥇", "🥈", "🥉"];
 
     return res.end(
-      `👑${thisYear.slice(2)} TOP3：` +
-      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join("、")
+      `${thisYear.slice(2)}년 랭킹 TOP3：` +
+      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
     );
   }
 
