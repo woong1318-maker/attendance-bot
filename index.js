@@ -109,7 +109,7 @@ const server = http.createServer(async (req, res) => {
 
     const ampm = hour >= 12 ? "PM" : "AM";
     const hour12 = hour % 12 || 12;
-    const timeStr = `${hour12}:${String(min).padStart(2, "0")}${ampm}`;
+    const timeStr = `${String(hour12).padStart(2, "0")}:${String(min).padStart(2, "0")}${ampm}`;
 
     return res.end(
       `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
