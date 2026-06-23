@@ -11,14 +11,14 @@ const supabase = createClient(
 );
 
 // =====================
-// 🇰🇷 KST 기준 시간
+// KST 시간
 // =====================
 function getKSTNow() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000);
 }
 
 // =====================
-// 게임 날짜 (07:52 리셋 기준)
+// 게임 날짜 (07:52 기준 리셋)
 // =====================
 function getGameDay() {
   const kst = getKSTNow();
@@ -45,21 +45,6 @@ function getGameDay() {
 }
 
 // =====================
-// 시간
-// =====================
-function getKSTTime() {
-  const kst = getKSTNow();
-  return `${String(kst.getUTCHours()).padStart(2, "0")}:${String(kst.getUTCMinutes()).padStart(2, "0")}`;
-}
-
-// =====================
-// 이름 정리
-// =====================
-function cleanName(name) {
-  return (name || "").toString().trim().toLowerCase();
-}
-
-// =====================
 // 서버
 // =====================
 const server = http.createServer(async (req, res) => {
@@ -67,7 +52,7 @@ const server = http.createServer(async (req, res) => {
 
   const parsed = url.parse(req.url, true);
   const path = parsed.pathname;
-  const user = cleanName(parsed.query.user);
+  const user = (parsed.query.user || "").trim().toLowerCase();
 
   const game = getGameDay();
 
@@ -87,8 +72,7 @@ const server = http.createServer(async (req, res) => {
       .from("attendance")
       .select("id")
       .eq("username", user)
-      .eq("date", today)
-      .limit(1);
+      .eq("date", today);
 
     if (already && already.length > 0) {
       const { count } = await supabase
@@ -118,24 +102,22 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("month", thisMonth);
 
+    // ===== 시간 포맷 (12시간 AM/PM) =====
+    const now = getKSTNow();
+    let hour = now.getUTCHours();
+    let min = now.getUTCMinutes();
+
+    const ampm = hour >= 12 ? "PM" : "AM";
+    const hour12 = hour % 12 || 12;
+    const timeStr = `${hour12}:${String(min).padStart(2, "0")}${ampm}`;
+
     return res.end(
-   const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
-
-let hour = now.getUTCHours();
-let min = now.getUTCMinutes();
-
-const ampm = hour >= 12 ? "PM" : "AM";
-const hour12 = hour % 12 || 12;
-
-const timeStr = `${hour12}:${String(min).padStart(2, "0")}${ampm}`;
-
-return res.end(
-  `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-);
+      `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+    );
   }
 
   // =====================
-  // 2️⃣ 체크
+  // 2️⃣ 개인 체크
   // =====================
   if (path === "/check") {
     const { data: monthData } = await supabase
@@ -189,10 +171,9 @@ return res.end(
       .slice(0, 3);
 
     const medals = ["🥇", "🥈", "🥉"];
-    const monthLabel = `${monthNumber}월`;
 
     return res.end(
-      `${monthLabel} 랭킹 TOP3：` +
+      `${monthNumber}월 랭킹 TOP3：` +
       top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
     );
   }
