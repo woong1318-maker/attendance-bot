@@ -119,8 +119,19 @@ const server = http.createServer(async (req, res) => {
       .eq("month", thisMonth);
 
     return res.end(
-      `🌸${user}🌸 ${getKSTTime()} 출첵완료 (${monthNumber}월 ${count || 0}회)`
-    );
+   const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
+
+let hour = now.getUTCHours();
+let min = now.getUTCMinutes();
+
+const ampm = hour >= 12 ? "PM" : "AM";
+const hour12 = hour % 12 || 12;
+
+const timeStr = `${hour12}:${String(min).padStart(2, "0")}${ampm}`;
+
+return res.end(
+  `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+);
   }
 
   // =====================
