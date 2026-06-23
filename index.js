@@ -68,6 +68,7 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
+    // 오늘 출석 여부
     const { data: already } = await supabase
       .from("attendance")
       .select("id")
@@ -86,6 +87,7 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
+    // 저장
     await supabase.from("attendance").insert([
       {
         username: user,
@@ -96,24 +98,71 @@ const server = http.createServer(async (req, res) => {
       }
     ]);
 
+    // 월 출석 수
     const { count } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", user)
       .eq("month", thisMonth);
 
-    // ===== 시간 포맷 (12시간 AM/PM) =====
+    // =====================
+    // 시간 포맷
+    // =====================
     const now = getKSTNow();
     let hour = now.getUTCHours();
     let min = now.getUTCMinutes();
 
     const ampm = hour >= 12 ? "PM" : "AM";
     const hour12 = hour % 12 || 12;
-    const timeStr = `${String(hour12).padStart(2, "0")}:${String(min).padStart(2, "0")}${ampm}`;
 
-    return res.end(
-      `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-    );
+    const timeStr =
+      `${String(hour12).padStart(2, "0")}:` +
+      `${String(min).padStart(2, "0")}${ampm}`;
+
+    // =====================
+    // streak 계산 (전체 날짜 기준, 월/년 무관)
+    // =====================
+    const getYesterday = (dateStr) => {
+      const d = new Date(dateStr);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const { data: allLogs } = await supabase
+      .from("attendance")
+      .select("date")
+      .eq("username", user);
+
+    const dateSet = new Set((allLogs ?? []).map(v => v.date));
+
+    let streak = 1;
+    let checkDate = today;
+
+    while (true) {
+      const prev = getYesterday(checkDate);
+      if (dateSet.has(prev)) {
+        streak++;
+        checkDate = prev;
+      } else {
+        break;
+      }
+    }
+
+    // =====================
+    // 출력 포맷
+    // =====================
+    let streakMsg = "";
+
+    if (streak >= 2) {
+      streakMsg = ` 🔥${streak}일 연속출첵`;
+    }
+
+    const message =
+      streak >= 2
+        ? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+        : `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+
+    return res.end(message);
   }
 
   // =====================
