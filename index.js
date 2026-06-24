@@ -126,8 +126,8 @@ while (true) {
 
 const message =
   streak >= 2
-    ? `🌸${user}🌸 [${timeStr} 🔥${streak}일 연속출첵완료 확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-    : `🌸${user}🌸 [${timeStr} 출첵완료 확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+    ? `🌸${user}🌸 [${timeStr} 🔥${streak}일 연속출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+    : `🌸${user}🌸 [${timeStr} 출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
 
 return res.end(message);
 
