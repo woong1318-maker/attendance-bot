@@ -53,7 +53,7 @@ const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const path = parsed.pathname;
   const user = (parsed.query.user || "").trim().toLowerCase();
-
+const lang = (parsed.query.lang || "ko").toLowerCase();
   const game = getGameDay();
 
   const today = game.date;
@@ -124,10 +124,19 @@ while (true) {
   }
 }
 
-const message =
-  streak >= 2
-    ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-    : `🌸${user}🌸 [출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+let message;
+
+if (lang === "en") {
+  message =
+    streak >= 2
+      ? `🌸${user}🌸 [🔥${streak}-day streak confirmed, ${count || 0} times this month] Keep it up!`
+      : `🌸${user}🌸 [Already checked in, ${count || 0} times this month] Have a great day!`;
+} else {
+  message =
+    streak >= 2
+      ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+      : `🌸${user}🌸 [출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
+}
 
 return res.end(message);
 
@@ -196,16 +205,26 @@ if (dateSet.has(prev)) {
 
 }
 
-let streakMsg = "";
+let message;
 
-if (streak >= 2) {
-streakMsg = ` 🔥${streak}일 연속출첵완료`;
+if (lang === "en") {
+  message =
+    streak >= 2
+      ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak, ${count || 0} times this month] Keep it up!`
+      : `🌸${user}🌸 [${timeStr} Checked in successfully, ${count || 0} times this month] Have a great day!`;
+} else {
+
+  let streakMsg = "";
+
+  if (streak >= 2) {
+    streakMsg = ` 🔥${streak}일 연속출첵완료`;
+  }
+
+  message =
+    streak >= 2
+      ? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+      : `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
 }
-
-const message =
-streak >= 2
-? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-: `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
 
 return res.end(message);
 }
