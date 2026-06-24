@@ -80,7 +80,6 @@ const { data: already } = await supabase
 // =====================
 if (already && already.length > 0) {
 
-```
 const { count } = await supabase
   .from("attendance")
   .select("*", { count: "exact", head: true })
@@ -131,7 +130,6 @@ const message =
     : `🌸${user}🌸 [${timeStr} 출첵완료 확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
 
 return res.end(message);
-```
 
 }
 
@@ -187,14 +185,14 @@ let checkDate = today;
 while (true) {
 const prev = getYesterday(checkDate);
 
-```
+
 if (dateSet.has(prev)) {
   streak++;
   checkDate = prev;
 } else {
   break;
 }
-```
+
 
 }
 
