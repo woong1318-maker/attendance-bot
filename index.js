@@ -3,7 +3,7 @@ const url = require("url");
 const { createClient } = require("@supabase/supabase-js");
 
 // =====================
-// Supabase
+// Supabase 설정
 // =====================
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -11,14 +11,14 @@ const supabase = createClient(
 );
 
 // =====================
-// KST 시간
+// KST 시간 계산
 // =====================
 function getKSTNow() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000);
 }
 
 // =====================
-// 게임 날짜 (07:52 기준 리셋)
+// 게임 날짜 기준 (07:52 리셋)
 // =====================
 function getGameDay() {
   const kst = getKSTNow();
@@ -45,7 +45,7 @@ function getGameDay() {
 }
 
 // =====================
-// 서버
+// 서버 구동
 // =====================
 const server = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -61,7 +61,7 @@ const server = http.createServer(async (req, res) => {
   const thisYear = game.year;
 
   // =====================
-  // 1️⃣ 출석 (/attend) -> 월 횟수 완전히 제거 ❌
+  // 1️⃣ 출석 (/attend) -> 월 횟수 완전히 노출 안 됨 ❌
   // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
@@ -72,7 +72,7 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("date", today);
 
-    // 이미 출석한 경우
+    // [이미 오늘 출석을 완료한 경우 중복 체크]
     if (already && already.length > 0) {
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
@@ -116,7 +116,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(message);
     }
 
-    // 새 출석 저장
+    // [오늘 처음 출석인 경우 DB에 새로 저장]
     await supabase.from("attendance").insert([
       {
         username: user,
@@ -127,6 +127,7 @@ const server = http.createServer(async (req, res) => {
       }
     ]);
 
+    // 시간 포맷 생성
     const now = getKSTNow();
     let hour = now.getUTCHours();
     let min = now.getUTCMinutes();
@@ -138,6 +139,7 @@ const server = http.createServer(async (req, res) => {
       `${String(hour12).padStart(2, "0")}:` +
       `${String(min).padStart(2, "0")}${ampm}`;
 
+    // 연속출석일 계산
     const getYesterday = (dateStr) => {
       const d = new Date(dateStr);
       d.setUTCDate(d.getUTCDate() - 1);
@@ -186,7 +188,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) -> 여기서만 몇 월 몇 회 알 수 있게 유지 (등수는 제외) ⭐️
+  // 2️⃣ 개인 체크 (/check) -> 등수 제외, 횟수만 국문/영문 출력 ⭐️
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
@@ -205,9 +207,15 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("year", thisYear);
 
-    return res.end(
-      `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, 올해 ${yearCount || 0}회`
-    );
+    if (lang === "en") {
+      return res.end(
+        `🌸${user}🌸 ${monthCount || 0} times this month, ${yearCount || 0} times this year`
+      );
+    } else {
+      return res.end(
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, 올해 ${yearCount || 0}회`
+      );
+    }
   }
 
   // =====================
