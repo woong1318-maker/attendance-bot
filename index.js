@@ -61,21 +61,18 @@ const server = http.createServer(async (req, res) => {
   const thisYear = game.year;
 
   // =====================
-  // 1️⃣ 출석 (/attend) -> 월 횟수(count) 제거 버전
+  // 1️⃣ 출석 (/attend) -> 월 횟수 노출 없음
   // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
-    // 오늘 출석 여부 확인
     const { data: already } = await supabase
       .from("attendance")
       .select("id")
       .eq("username", user)
       .eq("date", today);
 
-    // =====================
-    // 1-A. 이미 출석한 경우
-    // =====================
+    // 이미 출석한 경우
     if (already && already.length > 0) {
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
@@ -119,9 +116,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(message);
     }
 
-    // =====================
-    // 1-B. 새 출석 저장
-    // =====================
+    // 새 출석 저장
     await supabase.from("attendance").insert([
       {
         username: user,
@@ -132,7 +127,6 @@ const server = http.createServer(async (req, res) => {
       }
     ]);
 
-    // 시간 포맷
     const now = getKSTNow();
     let hour = now.getUTCHours();
     let min = now.getUTCMinutes();
@@ -144,7 +138,6 @@ const server = http.createServer(async (req, res) => {
       `${String(hour12).padStart(2, "0")}:` +
       `${String(min).padStart(2, "0")}${ampm}`;
 
-    // 연속출석 계산
     const getYesterday = (dateStr) => {
       const d = new Date(dateStr);
       d.setUTCDate(d.getUTCDate() - 1);
@@ -193,42 +186,28 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) -> 나 혼자 몰래 확인하는 용도 (그대로 유지)
+  // 2️⃣ 개인 체크 (/check) -> 기존 멘트 유지 + 등수만 제거 ⭐️
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
 
     const monthNumber = Number(thisMonth.split("-")[1]);
 
-    const { data: monthData } = await supabase
+    const { count: monthCount } = await supabase
       .from("attendance")
-      .select("username")
+      .select("*", { count: "exact", head: true })
+      .eq("username", user)
       .eq("month", thisMonth);
 
-    const { data: yearData } = await supabase
+    const { count: yearCount } = await supabase
       .from("attendance")
-      .select("username")
+      .select("*", { count: "exact", head: true })
+      .eq("username", user)
       .eq("year", thisYear);
 
-    const makeRank = (data) => {
-      const count = {};
-      (data ?? []).forEach(d => {
-        count[d.username] = (count[d.username] || 0) + 1;
-      });
-      return Object.entries(count).sort((a, b) => b[1] - a[1]);
-    };
-
-    const monthRank = makeRank(monthData);
-    const yearRank = makeRank(yearData);
-
-    const monthCount = monthRank.find(v => v[0] === user)?.[1] || 0;
-    const yearCount = yearRank.find(v => v[0] === user)?.[1] || 0;
-
-    const monthRankPos = monthRank.findIndex(v => v[0] === user) + 1;
-    const yearRankPos = yearRank.findIndex(v => v[0] === user) + 1;
-
+    // 기존 멘트 구조에서 등수 유도 코드만 쏙 뺐습니다.
     return res.end(
-      `🌸${user}🌸 ${monthNumber}월 ${monthCount}회(${monthRankPos}등), 올해 ${yearCount}회(${yearRankPos}등)`
+      `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, 올해 ${yearCount || 0}회`
     );
   }
 
