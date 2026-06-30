@@ -45,6 +45,17 @@ function getGameDay() {
 }
 
 // =====================
+// 영문 월 이름 변환기
+// =====================
+function getEnglishMonthName(monthNumber) {
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  return months[monthNumber - 1] || "";
+}
+
+// =====================
 // 서버 구동
 // =====================
 const server = http.createServer(async (req, res) => {
@@ -61,7 +72,7 @@ const server = http.createServer(async (req, res) => {
   const thisYear = game.year;
 
   // =====================
-  // 1️⃣ 출석 (/attend) -> 월 횟수 완전히 노출 안 됨 ❌
+  // 1️⃣ 출석 (/attend) -> 기존과 동일 (횟수 노출 없음)
   // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
@@ -72,7 +83,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("date", today);
 
-    // [이미 오늘 출석을 완료한 경우 중복 체크]
     if (already && already.length > 0) {
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
@@ -116,7 +126,6 @@ const server = http.createServer(async (req, res) => {
       return res.end(message);
     }
 
-    // [오늘 처음 출석인 경우 DB에 새로 저장]
     await supabase.from("attendance").insert([
       {
         username: user,
@@ -127,7 +136,6 @@ const server = http.createServer(async (req, res) => {
       }
     ]);
 
-    // 시간 포맷 생성
     const now = getKSTNow();
     let hour = now.getUTCHours();
     let min = now.getUTCMinutes();
@@ -139,7 +147,6 @@ const server = http.createServer(async (req, res) => {
       `${String(hour12).padStart(2, "0")}:` +
       `${String(min).padStart(2, "0")}${ampm}`;
 
-    // 연속출석일 계산
     const getYesterday = (dateStr) => {
       const d = new Date(dateStr);
       d.setUTCDate(d.getUTCDate() - 1);
@@ -188,7 +195,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) -> 등수 제외, 횟수만 국문/영문 출력 ⭐️
+  // 2️⃣ 개인 체크 (/check) -> 국문 연도 두 자리(slice) 처리 완료 ⭐️
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
@@ -208,12 +215,15 @@ const server = http.createServer(async (req, res) => {
       .eq("year", thisYear);
 
     if (lang === "en") {
+      const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times this month, ${yearCount || 0} times this year`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear}`
       );
     } else {
+      // thisYear(예: "2026") 뒤의 두 글자만 잘라서 "26"으로 만듭니다.
+      const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, 올해 ${yearCount || 0}회`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회`
       );
     }
   }
