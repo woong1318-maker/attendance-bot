@@ -60,20 +60,31 @@ const server = http.createServer(async (req, res) => {
   const thisMonth = game.month;
   const thisYear = game.year;
 
+  const monthNumber = Number(thisMonth.split("-")[1]);
+
   // =====================
-  // 1️⃣ 출석 (/attend) -> 월 횟수 노출 없음
+  // 1️⃣ 출석 (/attend) -> 월 횟수(count) 다시 포함! ⭐️
   // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
+    // 오늘 출석 여부
     const { data: already } = await supabase
       .from("attendance")
       .select("id")
       .eq("username", user)
       .eq("date", today);
 
+    // =====================
     // 이미 출석한 경우
+    // =====================
     if (already && already.length > 0) {
+      const { count } = await supabase
+        .from("attendance")
+        .select("*", { count: "exact", head: true })
+        .eq("username", user)
+        .eq("month", thisMonth);
+
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
         d.setUTCDate(d.getUTCDate() - 1);
@@ -104,19 +115,21 @@ const server = http.createServer(async (req, res) => {
       if (lang === "en") {
         message =
           streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed!] Keep it up!`
-            : `🌸${user}🌸 [Already checked in] Have a great day!`;
+            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed, ${count || 0} times this month] Keep it up!`
+            : `🌸${user}🌸 [Already checked in, ${count || 0} times this month] Have a great day!`;
       } else {
         message =
           streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인]🙋🏻‍♀️오늘 하루도 힘내요!`
-            : `🌸${user}🌸 [출첵완료 재확인]🙋🏻‍♀️오늘 하루도 힘내요!`;
+            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+            : `🌸${user}🌸 [출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
       }
 
       return res.end(message);
     }
 
+    // =====================
     // 새 출석 저장
+    // =====================
     await supabase.from("attendance").insert([
       {
         username: user,
@@ -127,6 +140,14 @@ const server = http.createServer(async (req, res) => {
       }
     ]);
 
+    // 월 출석 수 계산
+    const { count } = await supabase
+      .from("attendance")
+      .select("*", { count: "exact", head: true })
+      .eq("username", user)
+      .eq("month", thisMonth);
+
+    // 시간 포맷
     const now = getKSTNow();
     let hour = now.getUTCHours();
     let min = now.getUTCMinutes();
@@ -138,6 +159,7 @@ const server = http.createServer(async (req, res) => {
       `${String(hour12).padStart(2, "0")}:` +
       `${String(min).padStart(2, "0")}${ampm}`;
 
+    // 연속출석 계산
     const getYesterday = (dateStr) => {
       const d = new Date(dateStr);
       d.setUTCDate(d.getUTCDate() - 1);
@@ -168,8 +190,8 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       message =
         streak >= 2
-          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak] Keep it up!`
-          : `🌸${user}🌸 [${timeStr} Checked in successfully] Have a great day!`;
+          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak, ${count || 0} times this month] Keep it up!`
+          : `🌸${user}🌸 [${timeStr} Checked in successfully, ${count || 0} times this month] Have a great day!`;
     } else {
       let streakMsg = "";
       if (streak >= 2) {
@@ -178,20 +200,18 @@ const server = http.createServer(async (req, res) => {
 
       message =
         streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🙋🏻‍♀️오늘 하루도 힘내요!`
-          : `🌸${user}🌸 [${timeStr} 출첵완료]🙋🏻‍♀️오늘 하루도 힘내요!`;
+          ? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
+          : `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
     }
 
     return res.end(message);
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) -> 기존 멘트 유지 + 등수만 제거 ⭐️
+  // 2️⃣ 개인 체크 (/check) -> 멘트 유지 + 등수만 제거 ⭐️
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
-
-    const monthNumber = Number(thisMonth.split("-")[1]);
 
     const { count: monthCount } = await supabase
       .from("attendance")
@@ -205,7 +225,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("year", thisYear);
 
-    // 기존 멘트 구조에서 등수 유도 코드만 쏙 뺐습니다.
     return res.end(
       `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, 올해 ${yearCount || 0}회`
     );
@@ -215,7 +234,6 @@ const server = http.createServer(async (req, res) => {
   // 3️⃣ 월 랭킹 (/rank)
   // =====================
   if (path === "/rank") {
-    const monthNumber = Number(thisMonth.split("-")[1]);
     const { data } = await supabase
       .from("attendance")
       .select("username")
