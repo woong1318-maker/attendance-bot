@@ -53,187 +53,153 @@ const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const path = parsed.pathname;
   const user = (parsed.query.user || "").trim().toLowerCase();
-const lang = (parsed.query.lang || "ko").toLowerCase();
+  const lang = (parsed.query.lang || "ko").toLowerCase();
   const game = getGameDay();
 
   const today = game.date;
   const thisMonth = game.month;
   const thisYear = game.year;
 
-  const monthNumber = Number(thisMonth.split("-")[1]);
-
   // =====================
-  // 1️⃣ 출석
+  // 1️⃣ 출석 (/attend) -> 월 횟수(count) 제거 버전
   // =====================
-if (path === "/attend") {
-if (!user) return res.end("유저 없음");
+  if (path === "/attend") {
+    if (!user) return res.end("유저 없음");
 
-// 오늘 출석 여부
-const { data: already } = await supabase
-.from("attendance")
-.select("id")
-.eq("username", user)
-.eq("date", today);
+    // 오늘 출석 여부 확인
+    const { data: already } = await supabase
+      .from("attendance")
+      .select("id")
+      .eq("username", user)
+      .eq("date", today);
 
-// =====================
-// 이미 출석한 경우
-// =====================
-if (already && already.length > 0) {
+    // =====================
+    // 1-A. 이미 출석한 경우
+    // =====================
+    if (already && already.length > 0) {
+      const getYesterday = (dateStr) => {
+        const d = new Date(dateStr);
+        d.setUTCDate(d.getUTCDate() - 1);
+        return d.toISOString().slice(0, 10);
+      };
 
-const { count } = await supabase
-  .from("attendance")
-  .select("*", { count: "exact", head: true })
-  .eq("username", user)
-  .eq("month", thisMonth);
+      const { data: allLogs } = await supabase
+        .from("attendance")
+        .select("date")
+        .eq("username", user);
 
-const now = getKSTNow();
-let hour = now.getUTCHours();
-let min = now.getUTCMinutes();
+      const dateSet = new Set((allLogs ?? []).map(v => v.date));
 
-const ampm = hour >= 12 ? "PM" : "AM";
-const hour12 = hour % 12 || 12;
+      let streak = 1;
+      let checkDate = today;
 
-const timeStr =
-  `${String(hour12).padStart(2, "0")}:` +
-  `${String(min).padStart(2, "0")}${ampm}`;
+      while (true) {
+        const prev = getYesterday(checkDate);
+        if (dateSet.has(prev)) {
+          streak++;
+          checkDate = prev;
+        } else {
+          break;
+        }
+      }
 
-const getYesterday = (dateStr) => {
-  const d = new Date(dateStr);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-};
+      let message;
+      if (lang === "en") {
+        message =
+          streak >= 2
+            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed!] Keep it up!`
+            : `🌸${user}🌸 [Already checked in] Have a great day!`;
+      } else {
+        message =
+          streak >= 2
+            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인]🙋🏻‍♀️오늘 하루도 힘내요!`
+            : `🌸${user}🌸 [출첵완료 재확인]🙋🏻‍♀️오늘 하루도 힘내요!`;
+      }
 
-const { data: allLogs } = await supabase
-  .from("attendance")
-  .select("date")
-  .eq("username", user);
+      return res.end(message);
+    }
 
-const dateSet = new Set((allLogs ?? []).map(v => v.date));
+    // =====================
+    // 1-B. 새 출석 저장
+    // =====================
+    await supabase.from("attendance").insert([
+      {
+        username: user,
+        date: today,
+        month: thisMonth,
+        year: thisYear,
+        time: Date.now()
+      }
+    ]);
 
-let streak = 1;
-let checkDate = today;
+    // 시간 포맷
+    const now = getKSTNow();
+    let hour = now.getUTCHours();
+    let min = now.getUTCMinutes();
 
-while (true) {
-  const prev = getYesterday(checkDate);
+    const ampm = hour >= 12 ? "PM" : "AM";
+    const hour12 = hour % 12 || 12;
 
-  if (dateSet.has(prev)) {
-    streak++;
-    checkDate = prev;
-  } else {
-    break;
-  }
-}
+    const timeStr =
+      `${String(hour12).padStart(2, "0")}:` +
+      `${String(min).padStart(2, "0")}${ampm}`;
 
-let message;
+    // 연속출석 계산
+    const getYesterday = (dateStr) => {
+      const d = new Date(dateStr);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().slice(0, 10);
+    };
 
-if (lang === "en") {
-  message =
-    streak >= 2
-      ? `🌸${user}🌸 [🔥${streak}-day streak confirmed, ${count || 0} times this month] Keep it up!`
-      : `🌸${user}🌸 [Already checked in, ${count || 0} times this month] Have a great day!`;
-} else {
-  message =
-    streak >= 2
-      ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-      : `🌸${user}🌸 [출첵완료 재확인, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
-}
+    const { data: allLogs } = await supabase
+      .from("attendance")
+      .select("date")
+      .eq("username", user);
 
-return res.end(message);
+    const dateSet = new Set((allLogs ?? []).map(v => v.date));
 
-}
+    let streak = 1;
+    let checkDate = today;
 
-// =====================
-// 새 출석 저장
-// =====================
-await supabase.from("attendance").insert([
-{
-username: user,
-date: today,
-month: thisMonth,
-year: thisYear,
-time: Date.now()
-}
-]);
+    while (true) {
+      const prev = getYesterday(checkDate);
+      if (dateSet.has(prev)) {
+        streak++;
+        checkDate = prev;
+      } else {
+        break;
+      }
+    }
 
-// 월 출석 수
-const { count } = await supabase
-.from("attendance")
-.select("*", { count: "exact", head: true })
-.eq("username", user)
-.eq("month", thisMonth);
+    let message;
+    if (lang === "en") {
+      message =
+        streak >= 2
+          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak] Keep it up!`
+          : `🌸${user}🌸 [${timeStr} Checked in successfully] Have a great day!`;
+    } else {
+      let streakMsg = "";
+      if (streak >= 2) {
+        streakMsg = ` 🔥${streak}일 연속출첵완료`;
+      }
 
-// 시간 포맷
-const now = getKSTNow();
-let hour = now.getUTCHours();
-let min = now.getUTCMinutes();
+      message =
+        streak >= 2
+          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🙋🏻‍♀️오늘 하루도 힘내요!`
+          : `🌸${user}🌸 [${timeStr} 출첵완료]🙋🏻‍♀️오늘 하루도 힘내요!`;
+    }
 
-const ampm = hour >= 12 ? "PM" : "AM";
-const hour12 = hour % 12 || 12;
-
-const timeStr =
-`${String(hour12).padStart(2, "0")}:` +
-`${String(min).padStart(2, "0")}${ampm}`;
-
-// 연속출석 계산
-const getYesterday = (dateStr) => {
-const d = new Date(dateStr);
-d.setUTCDate(d.getUTCDate() - 1);
-return d.toISOString().slice(0, 10);
-};
-
-const { data: allLogs } = await supabase
-.from("attendance")
-.select("date")
-.eq("username", user);
-
-const dateSet = new Set((allLogs ?? []).map(v => v.date));
-
-let streak = 1;
-let checkDate = today;
-
-while (true) {
-const prev = getYesterday(checkDate);
-
-
-if (dateSet.has(prev)) {
-  streak++;
-  checkDate = prev;
-} else {
-  break;
-}
-
-
-}
-
-let message;
-
-if (lang === "en") {
-  message =
-    streak >= 2
-      ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak, ${count || 0} times this month] Keep it up!`
-      : `🌸${user}🌸 [${timeStr} Checked in successfully, ${count || 0} times this month] Have a great day!`;
-} else {
-
-  let streakMsg = "";
-
-  if (streak >= 2) {
-    streakMsg = ` 🔥${streak}일 연속출첵완료`;
+    return res.end(message);
   }
 
-  message =
-    streak >= 2
-      ? `🌸${user}🌸 [${timeStr}${streakMsg}, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`
-      : `🌸${user}🌸 [${timeStr} 출첵완료, ${monthNumber}월 ${count || 0}회]🙋🏻‍♀️오늘 하루도 힘내요!`;
-}
-
-return res.end(message);
-}
-
-
   // =====================
-  // 2️⃣ 개인 체크
+  // 2️⃣ 개인 체크 (/check) -> 나 혼자 몰래 확인하는 용도 (그대로 유지)
   // =====================
   if (path === "/check") {
+    if (!user) return res.end("유저 없음");
+
+    const monthNumber = Number(thisMonth.split("-")[1]);
+
     const { data: monthData } = await supabase
       .from("attendance")
       .select("username")
@@ -267,9 +233,10 @@ return res.end(message);
   }
 
   // =====================
-  // 3️⃣ 월 랭킹
+  // 3️⃣ 월 랭킹 (/rank)
   // =====================
   if (path === "/rank") {
+    const monthNumber = Number(thisMonth.split("-")[1]);
     const { data } = await supabase
       .from("attendance")
       .select("username")
@@ -293,7 +260,7 @@ return res.end(message);
   }
 
   // =====================
-  // 4️⃣ 연간 랭킹
+  // 4️⃣ 연간 랭킹 (/legend)
   // =====================
   if (path === "/legend") {
     const { data } = await supabase
