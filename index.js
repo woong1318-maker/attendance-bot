@@ -115,12 +115,12 @@ const server = http.createServer(async (req, res) => {
         message =
           streak >= 2
             ? `🌸${user}🌸 [🔥${streak}-day streak confirmed🐾] Keep it up!`
-            : `🌸${user}🌸 [Already checked in🐾] Have a great day!`;
+            : `🌸${user}🌸 [Already checked in]🐾Have a great day!`;
       } else {
         message =
           streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인🐾] 오늘 하루도 힘내요!`
-            : `🌸${user}🌸 [출첵완료 재확인🐾] 오늘 하루도 힘내요!`;
+            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인]🐾오늘 하루도 힘내요!`
+            : `🌸${user}🌸 [출첵완료 재확인]🐾오늘 하루도 힘내요!`;
       }
 
       return res.end(message);
@@ -177,8 +177,8 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       message =
         streak >= 2
-          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak🐾] Keep it up!`
-          : `🌸${user}🌸 [${timeStr} Checked in successfully🐾] Have a great day!`;
+          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak]🐾Keep it up!`
+          : `🌸${user}🌸 [${timeStr} Checked in successfully]🐾Have a great day!`;
     } else {
       let streakMsg = "";
       if (streak >= 2) {
@@ -187,8 +187,8 @@ const server = http.createServer(async (req, res) => {
 
       message =
         streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg}🐾] 오늘 하루도 힘내요!`
-          : `🌸${user}🌸 [${timeStr} 출첵완료🐾] 오늘 하루도 힘내요!`;
+          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾오늘 하루도 힘내요!`
+          : `🌸${user}🌸 [${timeStr} 출첵완료]🐾오늘 하루도 힘내요!`;
     }
 
     return res.end(message);
