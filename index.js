@@ -72,7 +72,7 @@ const server = http.createServer(async (req, res) => {
   const thisYear = game.year;
 
   // =====================
-  // 1️⃣ 출석 (/attend) -> 기존과 동일 (횟수 노출 없음)
+  // 1️⃣ 출석 (/attend)
   // =====================
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
@@ -83,6 +83,7 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("date", today);
 
+    // [기존 로직 유지]
     if (already && already.length > 0) {
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
@@ -195,7 +196,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) -> 국문 연도 두 자리(slice) 처리 완료 ⭐️
+  // 2️⃣ 개인 체크 (/check) [연속출석 10일 미션 추가]
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
@@ -214,16 +215,38 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("year", thisYear);
 
+    // 미션 추가 로직: 올해의 데이터를 모두 불러와서 연속 기록 계산
+    const { data: allLogs } = await supabase
+      .from("attendance")
+      .select("date")
+      .eq("username", user)
+      .eq("year", thisYear);
+    
+    const sortedDates = [...new Set((allLogs ?? []).map(v => v.date))]
+      .map(d => new Date(d))
+      .sort((a, b) => a - b);
+    
+    let bestStreak = 0;
+    let tempStreak = 0;
+    for (let i = 0; i < sortedDates.length; i++) {
+      if (i > 0 && (sortedDates[i].getTime() - sortedDates[i - 1].getTime()) === 86400000) {
+        tempStreak++;
+      } else {
+        tempStreak = 1;
+      }
+      bestStreak = Math.max(bestStreak, tempStreak);
+    }
+    const missionCount = Math.floor(bestStreak / 10);
+
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear}`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (10-day streak ${missionCount} times)`
       );
     } else {
-      // thisYear(예: "2026") 뒤의 두 글자만 잘라서 "26"으로 만듭니다.
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(10일 연속출석 ${missionCount}회)`
       );
     }
   }
