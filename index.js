@@ -239,7 +239,7 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear}(Weekly streak success ${missionCount} times)`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear}(Weekly streak: ${missionCount})`
       );
     } else {
       const shortYear = thisYear.slice(2);
