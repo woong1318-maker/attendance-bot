@@ -83,7 +83,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("date", today);
 
-    // [기존 로직 유지]
     if (already && already.length > 0) {
       const getYesterday = (dateStr) => {
         const d = new Date(dateStr);
@@ -196,7 +195,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) [연속출석 10일 미션 추가]
+  // 2️⃣ 개인 체크 (/check) [7일 연속출석 미션 성공 표시]
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
@@ -215,7 +214,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("year", thisYear);
 
-    // 미션 추가 로직: 올해의 데이터를 모두 불러와서 연속 기록 계산
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
@@ -236,17 +234,17 @@ const server = http.createServer(async (req, res) => {
       }
       bestStreak = Math.max(bestStreak, tempStreak);
     }
-    const missionCount = Math.floor(bestStreak / 10);
+    const missionCount = Math.floor(bestStreak / 7);
 
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (10-day streak ${missionCount} times)`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (7-day streak success ${missionCount} times)`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(10일 연속출석 ${missionCount}회)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(7일 연속출석 성공 ${missionCount}회)`
       );
     }
   }
@@ -307,9 +305,6 @@ const server = http.createServer(async (req, res) => {
   res.end("OK");
 });
 
-// =====================
-// 서버 실행
-// =====================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("server running on " + PORT);
