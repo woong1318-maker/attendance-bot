@@ -239,12 +239,12 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (7-day streak success ${missionCount} times)`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (Weekly streak success ${missionCount} times)`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(7일 연속출석 성공 ${missionCount}회)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(일주일 연속출석 성공 ${missionCount}회)`
       );
     }
   }
