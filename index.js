@@ -114,7 +114,7 @@ const server = http.createServer(async (req, res) => {
       if (lang === "en") {
         message =
           streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed🐾] Keep it up!`
+            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed]🐾Keep it up!`
             : `🌸${user}🌸 [Already checked in]🐾Have a great day!`;
       } else {
         message =
