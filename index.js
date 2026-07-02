@@ -119,8 +119,8 @@ const server = http.createServer(async (req, res) => {
       } else {
         message =
           streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}일 연속출첵완료 재확인]🐾오늘 하루도 힘내요!`
-            : `🌸${user}🌸 [출첵완료 재확인]🐾오늘 하루도 힘내요!`;
+            ? `🌸${user}🌸 [🔥${streak}일 연속출석완료 재확인]🐾오늘 하루도 힘내요!`
+            : `🌸${user}🌸 [출석완료 재확인]🐾오늘 하루도 힘내요!`;
       }
 
       return res.end(message);
@@ -182,13 +182,13 @@ const server = http.createServer(async (req, res) => {
     } else {
       let streakMsg = "";
       if (streak >= 2) {
-        streakMsg = ` 🔥${streak}일 연속출첵완료`;
+        streakMsg = ` 🔥${streak}일 연속출석완료`;
       }
 
       message =
         streak >= 2
           ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾오늘 하루도 힘내요!`
-          : `🌸${user}🌸 [${timeStr} 출첵완료]🐾오늘 하루도 힘내요!`;
+          : `🌸${user}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
     }
 
     return res.end(message);
