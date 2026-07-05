@@ -308,43 +308,52 @@ const server = http.createServer(async (req, res) => {
   if (path === "/rankcheck") {
     if (!user) return res.end("유저 없음");
 
-    // 1. 해당 월 및 해당 연도 데이터 가져오기
-    const { data: monthData } = await supabase
-      .from("attendance")
-      .select("username")
-      .eq("month", thisMonth);
+    try {
+      // 1. 해당 월 데이터 가져오기 (데이터 양이 많을 경우를 대비)
+      const { data: monthData, error: mError } = await supabase
+        .from("attendance")
+        .select("username")
+        .eq("month", thisMonth);
 
-    const { data: yearData } = await supabase
-      .from("attendance")
-      .select("username")
-      .eq("year", thisYear);
+      // 2. 해당 연도 데이터 가져오기
+      const { data: yearData, error: yError } = await supabase
+        .from("attendance")
+        .select("username")
+        .eq("year", thisYear);
 
-    // 2. 유저별 횟수 카운트
-    const count = (data) => {
-      const c = {};
-      (data ?? []).forEach(d => { c[d.username] = (c[d.username] || 0) + 1; });
-      return c;
-    };
+      if (mError || yError) throw new Error("데이터 조회 실패");
 
-    const monthCounts = count(monthData);
-    const yearCounts = count(yearData);
+      // 3. 유저별 횟수 카운트
+      const countMap = (data) => {
+        const c = {};
+        (data || []).forEach(d => { c[d.username] = (c[d.username] || 0) + 1; });
+        return c;
+      };
 
-    const uMonth = monthCounts[user] || 0;
-    const uYear = yearCounts[user] || 0;
+      const monthCounts = countMap(monthData);
+      const yearCounts = countMap(yearData);
 
-    if (uMonth === 0 && uYear === 0) {
-      return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
+      const uMonth = monthCounts[user] || 0;
+      const uYear = yearCounts[user] || 0;
+
+      if (uMonth === 0 && uYear === 0) {
+        return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
+      }
+
+      // 4. 등수 계산
+      const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
+      const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
+
+      // 5. 결과 출력
+      const monthNum = Number(thisMonth.split("-")[1]);
+      const yearShort = thisYear.slice(2);
+
+      return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등(${uMonth}회), ${yearShort}년 ${yRank}등(${uYear}회)`);
+
+    } catch (err) {
+      console.error(err);
+      return res.end(`🌸${user}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
     }
-
-    // 3. 등수 계산 (나보다 횟수가 많은 사람 + 1)
-    const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
-    const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
-
-    // 4. 결과 출력 (횟수 포함)
-    const monthNum = Number(thisMonth.split("-")[1]);
-    const yearShort = thisYear.slice(2);
-
-    return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등(${uMonth}회), ${yearShort}년 ${yRank}등(${uYear}회)`);
   }
   
   res.end("OK");
