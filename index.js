@@ -302,6 +302,51 @@ const server = http.createServer(async (req, res) => {
     );
   }
 
+  // =====================
+  // 5️⃣ 개인 등수 확인 (/rankcheck)
+  // =====================
+  if (path === "/rankcheck") {
+    if (!user) return res.end("유저 없음");
+
+    // 1. 해당 월 및 해당 연도 데이터 가져오기
+    const { data: monthData } = await supabase
+      .from("attendance")
+      .select("username")
+      .eq("month", thisMonth);
+
+    const { data: yearData } = await supabase
+      .from("attendance")
+      .select("username")
+      .eq("year", thisYear);
+
+    // 2. 유저별 횟수 카운트
+    const count = (data) => {
+      const c = {};
+      (data ?? []).forEach(d => { c[d.username] = (c[d.username] || 0) + 1; });
+      return c;
+    };
+
+    const monthCounts = count(monthData);
+    const yearCounts = count(yearData);
+
+    const uMonth = monthCounts[user] || 0;
+    const uYear = yearCounts[user] || 0;
+
+    if (uMonth === 0 && uYear === 0) {
+      return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
+    }
+
+    // 3. 등수 계산 (나보다 횟수가 많은 사람 + 1)
+    const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
+    const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
+
+    // 4. 결과 출력 (요청하신 형식)
+    const monthNum = Number(thisMonth.split("-")[1]);
+    const yearShort = thisYear.slice(2);
+
+    return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등, ${yearShort}년 ${yRank}등`);
+  }
+  
   res.end("OK");
 });
 
@@ -309,3 +354,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("server running on " + PORT);
 });
+
