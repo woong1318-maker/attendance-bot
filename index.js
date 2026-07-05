@@ -309,21 +309,16 @@ const server = http.createServer(async (req, res) => {
     if (!user) return res.end("유저 없음");
 
     try {
-      // 1. 해당 월 데이터 가져오기 (데이터 양이 많을 경우를 대비)
-      const { data: monthData, error: mError } = await supabase
+      const { data: monthData } = await supabase
         .from("attendance")
         .select("username")
         .eq("month", thisMonth);
 
-      // 2. 해당 연도 데이터 가져오기
-      const { data: yearData, error: yError } = await supabase
+      const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
         .eq("year", thisYear);
 
-      if (mError || yError) throw new Error("데이터 조회 실패");
-
-      // 3. 유저별 횟수 카운트
       const countMap = (data) => {
         const c = {};
         (data || []).forEach(d => { c[d.username] = (c[d.username] || 0) + 1; });
@@ -340,15 +335,21 @@ const server = http.createServer(async (req, res) => {
         return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
       }
 
-      // 4. 등수 계산
+      // 등수 계산: 나보다 출석 횟수가 많은 사람 수 + 1
       const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
       const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
 
-      // 5. 결과 출력
+      // 같은 횟수인 사람이 있는지 확인 (공동 등수 여부)
+      const sameMonthCount = Object.values(monthCounts).filter(c => c === uMonth).length;
+      const sameYearCount = Object.values(yearCounts).filter(c => c === uYear).length;
+
+      const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `${mRank}등`;
+      const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `${yRank}등`;
+
       const monthNum = Number(thisMonth.split("-")[1]);
       const yearShort = thisYear.slice(2);
 
-      return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등(${uMonth}회), ${yearShort}년 ${yRank}등(${uYear}회)`);
+      return res.end(`🌸${user}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
 
     } catch (err) {
       console.error(err);
