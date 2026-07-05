@@ -302,7 +302,7 @@ const server = http.createServer(async (req, res) => {
     );
   }
 
-  // =====================
+// =====================
   // 5️⃣ 개인 등수 확인 (/rankcheck)
   // =====================
   if (path === "/rankcheck") {
@@ -340,11 +340,11 @@ const server = http.createServer(async (req, res) => {
     const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
     const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
 
-    // 4. 결과 출력 (요청하신 형식)
+    // 4. 결과 출력 (횟수 포함)
     const monthNum = Number(thisMonth.split("-")[1]);
     const yearShort = thisYear.slice(2);
 
-    return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등, ${yearShort}년 ${yRank}등`);
+    return res.end(`🌸${user}🌸 ${monthNum}월 ${mRank}등(${uMonth}회), ${yearShort}년 ${yRank}등(${uYear}회)`);
   }
   
   res.end("OK");
