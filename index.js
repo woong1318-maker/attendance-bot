@@ -110,13 +110,14 @@ const server = http.createServer(async (req, res) => {
     let hasShield = userRecord ? userRecord.has_shield : true; 
 
     if (!alreadyChecked) {
+      // 오늘 아직 출석 안 한 경우
       const prevDate = getPrevDate(today);
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        // 어제 출석했음 -> 오늘(1) + 어제부터 거슬러 올라가며 끊기지 않은 연속 일수만 정확히 계산
+        // 어제 출석함 -> 오늘(1) + 어제부터 거슬러 올라가며 연속 일수 계산
         let checkDate = prevDate;
-        let currentStreakCount = 1; // 오늘 출석분 포함
+        let currentStreakCount = 1; 
         
         while (dateSet.has(checkDate)) {
           currentStreakCount++;
@@ -125,17 +126,16 @@ const server = http.createServer(async (req, res) => {
         streak = currentStreakCount;
         hasShield = userRecord ? userRecord.has_shield : true;
       } else {
-        // 어제 결석함 -> 방어권 사용 가능 여부 확인
+        // 어제 결석함 -> 방어권 확인
         const prevPrevDate = getPrevDate(prevDate);
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
         if (hasShield && isPrevPrevChecked) {
-          // 방어권 발동! (오늘 + 방어권 어제 + 전전날부터 끊기지 않은 연속 일수)
           usedShield = true;
           hasShield = false; 
 
           let checkDate = prevPrevDate;
-          let currentStreakCount = 2; // 오늘(1) + 방어권 어제(1)
+          let currentStreakCount = 2; // 오늘 + 방어권 어제
           
           while (dateSet.has(checkDate)) {
             currentStreakCount++;
@@ -143,7 +143,6 @@ const server = http.createServer(async (req, res) => {
           }
           streak = currentStreakCount;
         } else {
-          // 방어권도 없고 2일 이상 결석 -> 1부터 리셋
           streak = 1;
           hasShield = true; 
         }
@@ -160,25 +159,23 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
+      // 방금 넣은 오늘 날짜를 dateSet에 즉시 반영 (아래 스트릭 재계산을 위해)
+      dateSet.add(today);
+
       // 유저 정보 업데이트
       await supabase
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
-      // 이미 오늘 출석한 경우, 오늘을 제외하고 어제부터 끊기지 않은 실제 연속 스트릭 산출
-      let checkDate = getPrevDate(today);
-      let currentStreakCount = dateSet.has(today) ? 1 : 0;
+      // 오늘 이미 출석한 경우 -> 오늘을 포함하여 안전하게 역추적 계산
+      let checkDate = today;
+      let currentStreakCount = 0;
       
-      // 만약 오늘 로그가 이미 있다면 오늘치(1)를 기본으로 잡고 어제부터 역추적
-      if (currentStreakCount > 0) {
-        while (dateSet.has(checkDate)) {
-          currentStreakCount++;
-          checkDate = getPrevDate(checkDate);
-        }
-        streak = currentStreakCount;
-      } else {
-        streak = 1;
+      while (dateSet.has(checkDate)) {
+        currentStreakCount++;
+        checkDate = getPrevDate(checkDate);
       }
+      streak = currentStreakCount > 0 ? currentStreakCount : 1;
     }
 
     const now = getKSTNow();
