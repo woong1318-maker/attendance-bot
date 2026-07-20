@@ -42,7 +42,7 @@ function getGameDay() {
   return {
     date: dateStr,
     month: dateStr.slice(0, 7), // "YYYY-MM"
-    year: dateStr.slice(0, 4)   // "YYYY" (날짜 기준 연도로 정확히 동기화)
+    year: dateStr.slice(0, 4)   // "YYYY"
   };
 }
 
@@ -55,44 +55,6 @@ function getEnglishMonthName(monthNumber) {
     "July", "August", "September", "October", "November", "December"
   ];
   return months[monthNumber - 1] || "";
-}
-
-// =====================
-// 1회 누락 방어권이 적용된 연속출석(스트릭) 계산 함수 (2일 연속 결석 시 완전 리셋)
-// =====================
-function calculateProtectedStreak(today, dateSet) {
-  const getPrevDate = (dateStr) => {
-    const d = new Date(dateStr);
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
-  };
-
-  let streak = 1;
-  let checkDate = today;
-  let missedDays = 0;
-  let usedShield = false; // 방어권 사용 여부 추적
-
-  while (true) {
-    const prev = getPrevDate(checkDate);
-    
-    if (dateSet.has(prev)) {
-      streak++;
-      checkDate = prev;
-      missedDays = 0;
-    } else {
-      if (missedDays === 0) {
-        // 딱 1번의 누락은 방어권 발동
-        missedDays++;
-        checkDate = prev;
-        usedShield = true;
-      } else {
-        // 2번 연속으로 비어있으면(2일 이상 결석) 방어권 소멸 및 스트릭 완전 차단(리셋)
-        break;
-      }
-    }
-  }
-
-  return { streak, usedShield };
 }
 
 // =====================
@@ -120,6 +82,12 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!rawUser) return res.end("유저 없음");
 
+    const { data: userRecord } = await supabase
+      .from("users")
+      .select("streak, last_date, has_shield")
+      .eq("username", dbUser)
+      .single();
+
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
@@ -128,7 +96,42 @@ const server = http.createServer(async (req, res) => {
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const alreadyChecked = dateSet.has(today);
 
+    const getPrevDate = (dateStr) => {
+      const d = new Date(dateStr);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d.toISOString().slice(0, 10);
+    };
+
+    let streak = 1;
+    let usedShield = false;
+    let hasShield = userRecord ? userRecord.has_shield : true; // 기본값은 방어권 보유(true)
+
     if (!alreadyChecked) {
+      const prevDate = getPrevDate(today);
+      const isYesterdayChecked = dateSet.has(prevDate);
+
+      if (isYesterdayChecked) {
+        // 1. 어제 출석했을 때: 정상 스트릭 증가 (방어권 상태는 기존 유지)
+        streak = (userRecord ? userRecord.streak : 0) + 1;
+        hasShield = userRecord ? userRecord.has_shield : true;
+      } else {
+        // 2. 어제 결석했을 때: 방어권을 쓸 수 있는지 확인
+        const prevPrevDate = getPrevDate(prevDate);
+        const isPrevPrevChecked = dateSet.has(prevPrevDate);
+
+        if (hasShield && isPrevPrevChecked) {
+          // 방어권이 있고, 그 전날 출석했음 -> 방어권 발동!
+          usedShield = true;
+          hasShield = false; // 방어권 소모 (이제 없음!)
+          streak = (userRecord ? userRecord.streak : 1) + 1; // 스트릭 유지 및 증가
+        } else {
+          // 방어권이 이미 없거나(false), 전전날마저 안 나와서 2일 이상 결석한 경우
+          // -> 스트릭 리셋! 리셋되면서 방어권이 다시 1개 생성됨(true)
+          streak = 1;
+          hasShield = true; 
+        }
+      }
+
       await supabase.from("attendance").insert([
         {
           username: dbUser,
@@ -138,10 +141,13 @@ const server = http.createServer(async (req, res) => {
           time: Date.now()
         }
       ]);
-      dateSet.add(today);
-    }
 
-    const { streak, usedShield } = calculateProtectedStreak(today, dateSet);
+      await supabase
+        .from("users")
+        .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
+    } else {
+      streak = userRecord ? userRecord.streak : 1;
+    }
 
     const now = getKSTNow();
     let hour = now.getUTCHours();
@@ -256,7 +262,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥7일 연속출석 성공 ${missionCount}회)`
+        `🌸${rawUser}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 연속출석 성공 ${missionCount}회)`
       );
     }
   }
