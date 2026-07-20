@@ -56,6 +56,44 @@ function getEnglishMonthName(monthNumber) {
 }
 
 // =====================
+// 하루 공백 허용 연속 출석 계산 함수 (유예 발동 여부 포함)
+// =====================
+function calculateStreak(today, dateSet) {
+  const getPrevDate = (dateStr) => {
+    const d = new Date(dateStr);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  };
+
+  let streak = 1;
+  let checkDate = today;
+  let usedGraceDay = false; 
+  let isGraceUsed = false; // 하루 유예 발동 체크
+
+  while (true) {
+    const prev = getPrevDate(checkDate);
+    
+    if (dateSet.has(prev)) {
+      streak++;
+      checkDate = prev;
+    } else if (!usedGraceDay) {
+      const prevOfPrev = getPrevDate(prev);
+      if (dateSet.has(prevOfPrev)) {
+        usedGraceDay = true; 
+        isGraceUsed = true; // 유예 발동!
+        streak++; 
+        checkDate = prevOfPrev;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return { streak, isGraceUsed };
+}
+
+// =====================
 // 서버 구동
 // =====================
 const server = http.createServer(async (req, res) => {
@@ -77,64 +115,28 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!user) return res.end("유저 없음");
 
-    const { data: already } = await supabase
+    const { data: allLogs } = await supabase
       .from("attendance")
-      .select("id")
-      .eq("username", user)
-      .eq("date", today);
+      .select("date")
+      .eq("username", user);
 
-    if (already && already.length > 0) {
-      const getYesterday = (dateStr) => {
-        const d = new Date(dateStr);
-        d.setUTCDate(d.getUTCDate() - 1);
-        return d.toISOString().slice(0, 10);
-      };
+    const dateSet = new Set((allLogs ?? []).map(v => v.date));
+    const alreadyChecked = dateSet.has(today);
 
-      const { data: allLogs } = await supabase
-        .from("attendance")
-        .select("date")
-        .eq("username", user);
-
-      const dateSet = new Set((allLogs ?? []).map(v => v.date));
-
-      let streak = 1;
-      let checkDate = today;
-
-      while (true) {
-        const prev = getYesterday(checkDate);
-        if (dateSet.has(prev)) {
-          streak++;
-          checkDate = prev;
-        } else {
-          break;
+    if (!alreadyChecked) {
+      await supabase.from("attendance").insert([
+        {
+          username: user,
+          date: today,
+          month: thisMonth,
+          year: thisYear,
+          time: Date.now()
         }
-      }
-
-      let message;
-      if (lang === "en") {
-        message =
-          streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}-day streak confirmed]🐾Keep it up!`
-            : `🌸${user}🌸 [Already checked in]🐾Have a great day!`;
-      } else {
-        message =
-          streak >= 2
-            ? `🌸${user}🌸 [🔥${streak}일 연속출석완료 재확인]🐾오늘 하루도 힘내요!`
-            : `🌸${user}🌸 [출석완료 재확인]🐾오늘 하루도 힘내요!`;
-      }
-
-      return res.end(message);
+      ]);
+      dateSet.add(today);
     }
 
-    await supabase.from("attendance").insert([
-      {
-        username: user,
-        date: today,
-        month: thisMonth,
-        year: thisYear,
-        time: Date.now()
-      }
-    ]);
+    const { streak, isGraceUsed } = calculateStreak(today, dateSet);
 
     const now = getKSTNow();
     let hour = now.getUTCHours();
@@ -147,48 +149,36 @@ const server = http.createServer(async (req, res) => {
       `${String(hour12).padStart(2, "0")}:` +
       `${String(min).padStart(2, "0")}${ampm}`;
 
-    const getYesterday = (dateStr) => {
-      const d = new Date(dateStr);
-      d.setUTCDate(d.getUTCDate() - 1);
-      return d.toISOString().slice(0, 10);
-    };
-
-    const { data: allLogs } = await supabase
-      .from("attendance")
-      .select("date")
-      .eq("username", user);
-
-    const dateSet = new Set((allLogs ?? []).map(v => v.date));
-
-    let streak = 1;
-    let checkDate = today;
-
-    while (true) {
-      const prev = getYesterday(checkDate);
-      if (dateSet.has(prev)) {
-        streak++;
-        checkDate = prev;
-      } else {
-        break;
-      }
-    }
-
     let message;
     if (lang === "en") {
-      message =
-        streak >= 2
+      if (alreadyChecked) {
+        message = streak >= 2
+          ? `🌸${user}🌸 [🔥${streak}-day streak confirmed]🐾Keep it up!`
+          : `🌸${user}🌸 [Already checked in]🐾Have a great day!`;
+      } else {
+        message = streak >= 2
           ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak]🐾Keep it up!`
           : `🌸${user}🌸 [${timeStr} Checked in successfully]🐾Have a great day!`;
+      }
     } else {
       let streakMsg = "";
       if (streak >= 2) {
-        streakMsg = ` 🔥${streak}일 연속출석완료`;
+        if (isGraceUsed) {
+          streakMsg = `앗, 어제 잠시 쉬어가셨네요! 그래도 하루는 봐드리는 센스✨ 🔥${streak}일 연속출석완료`;
+        } else {
+          streakMsg = `🔥${streak}일 연속출석완료`;
+        }
       }
 
-      message =
-        streak >= 2
+      if (alreadyChecked) {
+        message = streak >= 2
+          ? `🌸${user}🌸 [${streak}일 연속출석완료 재확인]🐾오늘 하루도 힘내요!`
+          : `🌸${user}🌸 [출석완료 재확인]🐾오늘 하루도 힘내요!`;
+      } else {
+        message = streak >= 2
           ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾오늘 하루도 힘내요!`
           : `🌸${user}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
+      }
     }
 
     return res.end(message);
@@ -208,7 +198,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("month", thisMonth);
 
-    // 연간 횟수 조회: year 컬럼 대신 date 범위(gte, lte) 사용
     const { count: yearCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
@@ -229,11 +218,24 @@ const server = http.createServer(async (req, res) => {
     
     let bestStreak = 0;
     let tempStreak = 0;
+    let usedGraceDayInCheck = false;
+
     for (let i = 0; i < sortedDates.length; i++) {
-      if (i > 0 && (sortedDates[i].getTime() - sortedDates[i - 1].getTime()) === 86400000) {
-        tempStreak++;
-      } else {
+      if (i === 0) {
         tempStreak = 1;
+        usedGraceDayInCheck = false;
+      } else {
+        const diffDays = Math.round((sortedDates[i].getTime() - sortedDates[i - 1].getTime()) / 86400000);
+        
+        if (diffDays === 1) {
+          tempStreak++;
+        } else if (diffDays === 2 && !usedGraceDayInCheck) {
+          usedGraceDayInCheck = true;
+          tempStreak += 2;
+        } else {
+          tempStreak = 1;
+          usedGraceDayInCheck = false;
+        }
       }
       bestStreak = Math.max(bestStreak, tempStreak);
     }
@@ -242,12 +244,12 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear}(Weekly streak: ${missionCount})`
+        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (Weekly streak: ${missionCount})`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 획득 ${missionCount}회)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회 (일주일 개근상 획득 ${missionCount}회)`
       );
     }
   }
@@ -283,7 +285,6 @@ const server = http.createServer(async (req, res) => {
   // 4️⃣ 연간 랭킹 (/legend)
   // =====================
   if (path === "/legend") {
-    // 연간 랭킹 조회: date 범위 조건 활용
     const { data } = await supabase
       .from("attendance")
       .select("username")
@@ -319,7 +320,6 @@ const server = http.createServer(async (req, res) => {
         .select("username")
         .eq("month", thisMonth);
 
-      // 연간 개인 등수 데이터 조회: date 범위 조건 활용
       const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
