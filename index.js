@@ -114,9 +114,9 @@ const server = http.createServer(async (req, res) => {
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        // 어제 출석했음 -> 실제 출석 기록들을 역으로 거슬러 올라가며 정확한 연속 스트릭 계산
+        // 어제 출석했음 -> 오늘(1) + 어제부터 거슬러 올라가며 끊기지 않은 연속 일수만 정확히 계산
         let checkDate = prevDate;
-        let currentStreakCount = 1; // 오늘 포함 전날까지 치면 최소 2일
+        let currentStreakCount = 1; // 오늘 출석분 포함
         
         while (dateSet.has(checkDate)) {
           currentStreakCount++;
@@ -130,12 +130,12 @@ const server = http.createServer(async (req, res) => {
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
         if (hasShield && isPrevPrevChecked) {
-          // 방어권 발동! 전전날까지의 스트릭을 기준으로 이어줌
+          // 방어권 발동! (오늘 + 방어권 어제 + 전전날부터 끊기지 않은 연속 일수)
           usedShield = true;
           hasShield = false; 
 
           let checkDate = prevPrevDate;
-          let currentStreakCount = 2; // 오늘(1) + 전전날(1) + 방어권으로 메워진 어제(1) = 3 이상
+          let currentStreakCount = 2; // 오늘(1) + 방어권 어제(1)
           
           while (dateSet.has(checkDate)) {
             currentStreakCount++;
@@ -165,15 +165,20 @@ const server = http.createServer(async (req, res) => {
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
-      // 이미 오늘 출석한 경우, 기존 로그들을 역추적하여 정확한 스트릭 산출
+      // 이미 오늘 출석한 경우, 오늘을 제외하고 어제부터 끊기지 않은 실제 연속 스트릭 산출
       let checkDate = getPrevDate(today);
-      let currentStreakCount = 1;
+      let currentStreakCount = dateSet.has(today) ? 1 : 0;
       
-      while (dateSet.has(checkDate)) {
-        currentStreakCount++;
-        checkDate = getPrevDate(checkDate);
+      // 만약 오늘 로그가 이미 있다면 오늘치(1)를 기본으로 잡고 어제부터 역추적
+      if (currentStreakCount > 0) {
+        while (dateSet.has(checkDate)) {
+          currentStreakCount++;
+          checkDate = getPrevDate(checkDate);
+        }
+        streak = currentStreakCount;
+      } else {
+        streak = 1;
       }
-      streak = currentStreakCount;
     }
 
     const now = getKSTNow();
