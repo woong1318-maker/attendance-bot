@@ -187,7 +187,7 @@ const server = http.createServer(async (req, res) => {
       let streakMsg = "";
       if (streak >= 2) {
         if (isGraceUsed) {
-          streakMsg = `어제 잠시 쉬어가셨네요! 하루는 봐드리는 센스✨ 🔥${streak}일 연속출석완료`;
+          streakMsg = `앗, 어제 잠시 쉬어가셨네요! 🛡️연속출석 방어권 발동✨ 🔥${streak}일 연속출석완료`;
         } else {
           streakMsg = `🔥${streak}일 연속출석완료`;
         }
