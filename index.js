@@ -57,6 +57,13 @@ function getEnglishMonthName(monthNumber) {
   return months[monthNumber - 1] || "";
 }
 
+// 날짜 문자열 계산 헬퍼
+function getPrevDate(dateStr) {
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // =====================
 // 서버 구동
 // =====================
@@ -82,12 +89,14 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!rawUser) return res.end("유저 없음");
 
+    // 유저 정보 가져오기 (방어권 상태 확인용)
     const { data: userRecord } = await supabase
       .from("users")
-      .select("streak, last_date, has_shield")
+      .select("has_shield")
       .eq("username", dbUser)
       .single();
 
+    // 전체 출석 로그 가져오기
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
@@ -96,14 +105,6 @@ const server = http.createServer(async (req, res) => {
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const alreadyChecked = dateSet.has(today);
 
-    const getPrevDate = (dateStr) => {
-      const d = new Date(dateStr);
-      d.setUTCDate(d.getUTCDate() - 1);
-      return d.toISOString().slice(0, 10);
-    };
-
-    const currentStreak = userRecord && typeof userRecord.streak === "number" ? userRecord.streak : 0;
-    
     let streak = 1;
     let usedShield = false;
     let hasShield = userRecord ? userRecord.has_shield : true; 
@@ -113,22 +114,42 @@ const server = http.createServer(async (req, res) => {
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        streak = currentStreak + 1;
+        // 어제 출석했음 -> 실제 출석 기록들을 역으로 거슬러 올라가며 정확한 연속 스트릭 계산
+        let checkDate = prevDate;
+        let currentStreakCount = 1; // 오늘 포함 전날까지 치면 최소 2일
+        
+        while (dateSet.has(checkDate)) {
+          currentStreakCount++;
+          checkDate = getPrevDate(checkDate);
+        }
+        streak = currentStreakCount;
         hasShield = userRecord ? userRecord.has_shield : true;
       } else {
+        // 어제 결석함 -> 방어권 사용 가능 여부 확인
         const prevPrevDate = getPrevDate(prevDate);
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
         if (hasShield && isPrevPrevChecked) {
+          // 방어권 발동! 전전날까지의 스트릭을 기준으로 이어줌
           usedShield = true;
           hasShield = false; 
-          streak = currentStreak + 1; 
+
+          let checkDate = prevPrevDate;
+          let currentStreakCount = 2; // 오늘(1) + 전전날(1) + 방어권으로 메워진 어제(1) = 3 이상
+          
+          while (dateSet.has(checkDate)) {
+            currentStreakCount++;
+            checkDate = getPrevDate(checkDate);
+          }
+          streak = currentStreakCount;
         } else {
+          // 방어권도 없고 2일 이상 결석 -> 1부터 리셋
           streak = 1;
           hasShield = true; 
         }
       }
 
+      // 오늘 출석 기록 삽입
       await supabase.from("attendance").insert([
         {
           username: dbUser,
@@ -139,11 +160,20 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
+      // 유저 정보 업데이트
       await supabase
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
-      streak = currentStreak > 0 ? currentStreak : 1;
+      // 이미 오늘 출석한 경우, 기존 로그들을 역추적하여 정확한 스트릭 산출
+      let checkDate = getPrevDate(today);
+      let currentStreakCount = 1;
+      
+      while (dateSet.has(checkDate)) {
+        currentStreakCount++;
+        checkDate = getPrevDate(checkDate);
+      }
+      streak = currentStreakCount;
     }
 
     const now = getKSTNow();
