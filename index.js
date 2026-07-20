@@ -195,7 +195,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 2️⃣ 개인 체크 (/check) [7일 연속출석 미션 성공 표시]
+  // 2️⃣ 개인 체크 (/check)
   // =====================
   if (path === "/check") {
     if (!user) return res.end("유저 없음");
@@ -208,17 +208,20 @@ const server = http.createServer(async (req, res) => {
       .eq("username", user)
       .eq("month", thisMonth);
 
+    // 연간 횟수 조회: year 컬럼 대신 date 범위(gte, lte) 사용
     const { count: yearCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", user)
-      .eq("year", thisYear);
+      .gte("date", `${thisYear}-01-01`)
+      .lte("date", `${thisYear}-12-31`);
 
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
       .eq("username", user)
-      .eq("year", thisYear);
+      .gte("date", `${thisYear}-01-01`)
+      .lte("date", `${thisYear}-12-31`);
     
     const sortedDates = [...new Set((allLogs ?? []).map(v => v.date))]
       .map(d => new Date(d))
@@ -280,10 +283,12 @@ const server = http.createServer(async (req, res) => {
   // 4️⃣ 연간 랭킹 (/legend)
   // =====================
   if (path === "/legend") {
+    // 연간 랭킹 조회: date 범위 조건 활용
     const { data } = await supabase
       .from("attendance")
       .select("username")
-      .eq("year", thisYear);
+      .gte("date", `${thisYear}-01-01`)
+      .lte("date", `${thisYear}-12-31`);
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -302,7 +307,7 @@ const server = http.createServer(async (req, res) => {
     );
   }
 
-// =====================
+  // =====================
   // 5️⃣ 개인 등수 확인 (/rankcheck)
   // =====================
   if (path === "/rankcheck") {
@@ -314,10 +319,12 @@ const server = http.createServer(async (req, res) => {
         .select("username")
         .eq("month", thisMonth);
 
+      // 연간 개인 등수 데이터 조회: date 범위 조건 활용
       const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
-        .eq("year", thisYear);
+        .gte("date", `${thisYear}-01-01`)
+        .lte("date", `${thisYear}-12-31`);
 
       const countMap = (data) => {
         const c = {};
@@ -335,11 +342,9 @@ const server = http.createServer(async (req, res) => {
         return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
       }
 
-      // 등수 계산: 나보다 출석 횟수가 많은 사람 수 + 1
       const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
       const yRank = Object.values(yearCounts).filter(c => c > uYear).length + 1;
 
-      // 같은 횟수인 사람이 있는지 확인 (공동 등수 여부)
       const sameMonthCount = Object.values(monthCounts).filter(c => c === uMonth).length;
       const sameYearCount = Object.values(yearCounts).filter(c => c === uYear).length;
 
@@ -364,4 +369,3 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log("server running on " + PORT);
 });
-
