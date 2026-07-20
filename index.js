@@ -102,6 +102,8 @@ const server = http.createServer(async (req, res) => {
       return d.toISOString().slice(0, 10);
     };
 
+    const currentStreak = userRecord && typeof userRecord.streak === "number" ? userRecord.streak : 0;
+    
     let streak = 1;
     let usedShield = false;
     let hasShield = userRecord ? userRecord.has_shield : true; 
@@ -111,7 +113,7 @@ const server = http.createServer(async (req, res) => {
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        streak = (userRecord ? userRecord.streak : 0) + 1;
+        streak = currentStreak + 1;
         hasShield = userRecord ? userRecord.has_shield : true;
       } else {
         const prevPrevDate = getPrevDate(prevDate);
@@ -120,14 +122,13 @@ const server = http.createServer(async (req, res) => {
         if (hasShield && isPrevPrevChecked) {
           usedShield = true;
           hasShield = false; 
-          streak = (userRecord ? userRecord.streak : 1) + 1; 
+          streak = currentStreak + 1; 
         } else {
           streak = 1;
           hasShield = true; 
         }
       }
 
-      // 오늘 출석 기록 삽입
       await supabase.from("attendance").insert([
         {
           username: dbUser,
@@ -138,13 +139,11 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
-      // 유저 정보 업데이트
       await supabase
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
-      // 이미 출석한 경우 기존 유저 테이블의 스트릭 값을 정확하게 가져옴
-      streak = userRecord ? userRecord.streak : 1;
+      streak = currentStreak > 0 ? currentStreak : 1;
     }
 
     const now = getKSTNow();
