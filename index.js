@@ -65,7 +65,7 @@ function getUserTokens(totalCount, usedTokenCount) {
 }
 
 // =====================
-// 방어권 소모를 반영한 스마트 스트릭 계산 함수
+// 방어권 소모를 반영한 스마트 스트릭 계산 함수 (하루 공백만 방어)
 // =====================
 function calculateStreakWithTokens(today, dateSet) {
   const getPrevDate = (dateStr) => {
@@ -82,10 +82,13 @@ function calculateStreakWithTokens(today, dateSet) {
     const prev = getPrevDate(checkDate);
     
     if (dateSet.has(prev)) {
+      // 바로 전날 출석 기록이 있으면 정상 누적
       streak++;
       checkDate = prev;
     } else {
+      // 전날 기록이 비어있음 -> '딱 하루'만 빠졌는지 확인 (다전날에 출석 기록이 있는지 체크)
       const prevOfPrev = getPrevDate(prev);
+      
       if (dateSet.has(prevOfPrev)) {
         const currentTotal = dateSet.size;
         const available = getUserTokens(currentTotal, tokensUsed);
@@ -93,11 +96,12 @@ function calculateStreakWithTokens(today, dateSet) {
         if (available > 0) {
           tokensUsed++;
           streak++;
-          checkDate = prevOfPrev;
+          checkDate = prevOfPrev; // 하루 공백을 방어권으로 메우고 그 전날로 이동
         } else {
-          break;
+          break; // 방어권 없으면 컷
         }
       } else {
+        // 다전날에도 기록이 없다면? -> 2일 이상 연속으로 안 한 것이므로 방어 불가! 컷
         break;
       }
     }
@@ -187,9 +191,9 @@ const server = http.createServer(async (req, res) => {
       let streakMsg = "";
       if (streak >= 2) {
         if (isGraceUsed) {
-          streakMsg = `앗, 어제 잠시 쉬어가셨네요! 🛡️연속출석 방어권 발동✨ 🔥${streak}일 연속출석완료`;
+          streakMsg = ` 🛡️방어권이 소모되어 연속 출석이 유지되었습니다! 🔥${streak}일 연속출석완료`;
         } else {
-          streakMsg = `🔥${streak}일 연속출석완료`;
+          streakMsg = ` 🔥${streak}일 연속출석완료`;
         }
       }
 
@@ -274,7 +278,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 방어권 ${currentTokens}개)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회 | 연속출석 방어권 🛡️${currentTokens}개)`
       );
     }
   }
