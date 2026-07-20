@@ -273,7 +273,7 @@ const server = http.createServer(async (req, res) => {
       const engMonth = getEnglishMonthName(monthNumber);
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times | Streak Shield 🛡️${currentTokens} shields)`
+        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times, 🛡️Streak Shield ${currentTokens} shields)`
       );
     } else {
       const shortYear = thisYear.slice(2);
