@@ -191,7 +191,7 @@ const server = http.createServer(async (req, res) => {
       let streakMsg = "";
       if (streak >= 2) {
         if (isGraceUsed) {
-          streakMsg = ` 🛡️앗, 어제 잠시 쉬어가셨네요! 연속출석 방어권 발동! 🔥${streak}일 연속출석완료`;
+          streakMsg = ` 🛡️하루 쉬어가셨네요:) 연속출석 보존권 적용! 🔥${streak}일 연속출석완료`;
         } else {
           streakMsg = ` 🔥${streak}일 연속출석완료`;
         }
@@ -285,7 +285,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 방어권 ${currentTokens}개)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 보존권 ${currentTokens}개)`
       );
     }
   }
