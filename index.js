@@ -104,34 +104,30 @@ const server = http.createServer(async (req, res) => {
 
     let streak = 1;
     let usedShield = false;
-    let hasShield = userRecord ? userRecord.has_shield : true; // 기본값은 방어권 보유(true)
+    let hasShield = userRecord ? userRecord.has_shield : true; 
 
     if (!alreadyChecked) {
       const prevDate = getPrevDate(today);
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        // 1. 어제 출석했을 때: 정상 스트릭 증가 (방어권 상태는 기존 유지)
         streak = (userRecord ? userRecord.streak : 0) + 1;
         hasShield = userRecord ? userRecord.has_shield : true;
       } else {
-        // 2. 어제 결석했을 때: 방어권을 쓸 수 있는지 확인
         const prevPrevDate = getPrevDate(prevDate);
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
         if (hasShield && isPrevPrevChecked) {
-          // 방어권이 있고, 그 전날 출석했음 -> 방어권 발동!
           usedShield = true;
-          hasShield = false; // 방어권 소모 (이제 없음!)
-          streak = (userRecord ? userRecord.streak : 1) + 1; // 스트릭 유지 및 증가
+          hasShield = false; 
+          streak = (userRecord ? userRecord.streak : 1) + 1; 
         } else {
-          // 방어권이 이미 없거나(false), 전전날마저 안 나와서 2일 이상 결석한 경우
-          // -> 스트릭 리셋! 리셋되면서 방어권이 다시 1개 생성됨(true)
           streak = 1;
           hasShield = true; 
         }
       }
 
+      // 오늘 출석 기록 삽입
       await supabase.from("attendance").insert([
         {
           username: dbUser,
@@ -142,10 +138,12 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
+      // 유저 정보 업데이트
       await supabase
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
+      // 이미 출석한 경우 기존 유저 테이블의 스트릭 값을 정확하게 가져옴
       streak = userRecord ? userRecord.streak : 1;
     }
 
