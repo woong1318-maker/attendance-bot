@@ -235,17 +235,24 @@ const server = http.createServer(async (req, res) => {
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
-      .eq("username", user)
-      .gte("date", `${thisYear}-01-01`)
-      .lte("date", `${thisYear}-12-31`);
+      .eq("username", user);
     
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const totalCount = dateSet.size;
     
-    const currentTokens = getUserTokens(totalCount, 0); 
+    // 💡 방어권 소모 개수가 /check에서도 정확히 반영되도록 수정됨
+    const { tokensUsed } = calculateStreakWithTokens(today, dateSet);
+    const currentTokens = getUserTokens(totalCount, tokensUsed); 
 
-    const sortedDates = [...dateSet]
-      .map(d => new Date(d))
+    const { data: yearLogs } = await supabase
+      .from("attendance")
+      .select("date")
+      .eq("username", user)
+      .gte("date", `${thisYear}-01-01`)
+      .lte("date", `${thisYear}-12-31`);
+
+    const sortedDates = [...(yearLogs ?? [])]
+      .map(v => new Date(v.date))
       .sort((a, b) => a - b);
     
     let bestStreak = 0;
@@ -273,12 +280,12 @@ const server = http.createServer(async (req, res) => {
       const engMonth = getEnglishMonthName(monthNumber);
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times, 🛡️Streak Shield ${currentTokens} shields)`
+        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times | Streak Shield 🛡️${currentTokens} shields)`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 방어권${currentTokens}개)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 방어권 ${currentTokens}개)`
       );
     }
   }
