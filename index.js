@@ -56,9 +56,18 @@ function getEnglishMonthName(monthNumber) {
 }
 
 // =====================
-// 하루 공백 허용 연속 출석 계산 함수 (유예 발동 여부 포함)
+// 방어권 자동 계산 함수 (기본 1개 + 30회당 추가 - 사용한 개수)
 // =====================
-function calculateStreak(today, dateSet) {
+function getUserTokens(totalCount, usedTokenCount) {
+  const earnedTokens = 1 + Math.floor(totalCount / 30);
+  const currentTokens = earnedTokens - usedTokenCount;
+  return Math.max(0, currentTokens);
+}
+
+// =====================
+// 방어권 소모를 반영한 스마트 스트릭 계산 함수
+// =====================
+function calculateStreakWithTokens(today, dateSet) {
   const getPrevDate = (dateStr) => {
     const d = new Date(dateStr);
     d.setUTCDate(d.getUTCDate() - 1);
@@ -67,8 +76,7 @@ function calculateStreak(today, dateSet) {
 
   let streak = 1;
   let checkDate = today;
-  let usedGraceDay = false; 
-  let isGraceUsed = false; // 하루 유예 발동 체크
+  let tokensUsed = 0;
 
   while (true) {
     const prev = getPrevDate(checkDate);
@@ -76,21 +84,26 @@ function calculateStreak(today, dateSet) {
     if (dateSet.has(prev)) {
       streak++;
       checkDate = prev;
-    } else if (!usedGraceDay) {
+    } else {
       const prevOfPrev = getPrevDate(prev);
       if (dateSet.has(prevOfPrev)) {
-        usedGraceDay = true; 
-        isGraceUsed = true; // 유예 발동!
-        streak++; 
-        checkDate = prevOfPrev;
+        const currentTotal = dateSet.size;
+        const available = getUserTokens(currentTotal, tokensUsed);
+        
+        if (available > 0) {
+          tokensUsed++;
+          streak++;
+          checkDate = prevOfPrev;
+        } else {
+          break;
+        }
       } else {
         break;
       }
-    } else {
-      break;
     }
   }
-  return { streak, isGraceUsed };
+
+  return { streak, tokensUsed };
 }
 
 // =====================
@@ -136,7 +149,8 @@ const server = http.createServer(async (req, res) => {
       dateSet.add(today);
     }
 
-    const { streak, isGraceUsed } = calculateStreak(today, dateSet);
+    const { streak, tokensUsed } = calculateStreakWithTokens(today, dateSet);
+    const isGraceUsed = tokensUsed > 0 && !alreadyChecked;
 
     const now = getKSTNow();
     let hour = now.getUTCHours();
@@ -151,28 +165,37 @@ const server = http.createServer(async (req, res) => {
 
     let message;
     if (lang === "en") {
-      if (alreadyChecked) {
-        message = streak >= 2
-          ? `🌸${user}🌸 [🔥${streak}-day streak confirmed]🐾Keep it up!`
-          : `🌸${user}🌸 [Already checked in]🐾Have a great day!`;
-      } else {
-        message = streak >= 2
-          ? `🌸${user}🌸 [${timeStr} 🔥${streak}-day streak]🐾Keep it up!`
-          : `🌸${user}🌸 [${timeStr} Checked in successfully]🐾Have a great day!`;
-      }
-    } else {
       let streakMsg = "";
       if (streak >= 2) {
         if (isGraceUsed) {
-          streakMsg = `앗, 어제 잠시 쉬어가셨네요! 그래도 하루는 봐드리는 센스✨ 🔥${streak}일 연속출석완료`;
+          streakMsg = ` 🛡️Streak Shield consumed, streak maintained! 🔥${streak}-day streak completed`;
         } else {
-          streakMsg = `🔥${streak}일 연속출석완료`;
+          streakMsg = ` 🔥${streak}-day streak completed`;
         }
       }
 
       if (alreadyChecked) {
         message = streak >= 2
-          ? `🌸${user}🌸 [${streak}일 연속출석완료 재확인]🐾오늘 하루도 힘내요!`
+          ? `🌸${user}🌸 [${timeStr}${streakMsg} confirmed]🐾Have a great day!`
+          : `🌸${user}🌸 [${timeStr} Check-in confirmed]🐾Have a great day!`;
+      } else {
+        message = streak >= 2
+          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾Have a great day!`
+          : `🌸${user}🌸 [${timeStr} Check-in completed]🐾Have a great day!`;
+      }
+    } else {
+      let streakMsg = "";
+      if (streak >= 2) {
+        if (isGraceUsed) {
+          streakMsg = ` 🛡️방어권이 소모되어 연속 출석이 유지되었습니다! 🔥${streak}일 연속출석완료`;
+        } else {
+          streakMsg = ` 🔥${streak}일 연속출석완료`;
+        }
+      }
+
+      if (alreadyChecked) {
+        message = streak >= 2
+          ? `🌸${user}🌸 [${timeStr}${streakMsg} 재확인]🐾오늘 하루도 힘내요!`
           : `🌸${user}🌸 [출석완료 재확인]🐾오늘 하루도 힘내요!`;
       } else {
         message = streak >= 2
@@ -212,29 +235,30 @@ const server = http.createServer(async (req, res) => {
       .gte("date", `${thisYear}-01-01`)
       .lte("date", `${thisYear}-12-31`);
     
-    const sortedDates = [...new Set((allLogs ?? []).map(v => v.date))]
+    const dateSet = new Set((allLogs ?? []).map(v => v.date));
+    const totalCount = dateSet.size;
+    
+    const currentTokens = getUserTokens(totalCount, 0); 
+
+    const sortedDates = [...dateSet]
       .map(d => new Date(d))
       .sort((a, b) => a - b);
     
     let bestStreak = 0;
     let tempStreak = 0;
-    let usedGraceDayInCheck = false;
 
     for (let i = 0; i < sortedDates.length; i++) {
       if (i === 0) {
         tempStreak = 1;
-        usedGraceDayInCheck = false;
       } else {
         const diffDays = Math.round((sortedDates[i].getTime() - sortedDates[i - 1].getTime()) / 86400000);
         
         if (diffDays === 1) {
           tempStreak++;
-        } else if (diffDays === 2 && !usedGraceDayInCheck) {
-          usedGraceDayInCheck = true;
+        } else if (diffDays === 2) {
           tempStreak += 2;
         } else {
           tempStreak = 1;
-          usedGraceDayInCheck = false;
         }
       }
       bestStreak = Math.max(bestStreak, tempStreak);
@@ -243,13 +267,14 @@ const server = http.createServer(async (req, res) => {
 
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
+      const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthCount || 0} times in ${engMonth}, ${yearCount || 0} times in ${thisYear} (Weekly streak: ${missionCount})`
+        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times | Streak Shield 🛡️${currentTokens} shields)`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회 (일주일 개근상 획득 ${missionCount}회)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 방어권 ${currentTokens}개)`
       );
     }
   }
@@ -275,10 +300,18 @@ const server = http.createServer(async (req, res) => {
 
     const medals = ["🥇", "🥈", "🥉"];
 
-    return res.end(
-      `${monthNumber}월 랭킹 TOP3：` +
-      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
-    );
+    if (lang === "en") {
+      const engMonth = getEnglishMonthName(monthNumber);
+      return res.end(
+        `${engMonth} Ranking TOP3：` +
+        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
+      );
+    } else {
+      return res.end(
+        `${monthNumber}월 랭킹 TOP3：` +
+        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
+      );
+    }
   }
 
   // =====================
@@ -302,10 +335,17 @@ const server = http.createServer(async (req, res) => {
 
     const medals = ["🥇", "🥈", "🥉"];
 
-    return res.end(
-      `${thisYear.slice(2)}년 랭킹 TOP3：` +
-      top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
-    );
+    if (lang === "en") {
+      return res.end(
+        `${thisYear} Year Ranking TOP3：` +
+        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
+      );
+    } else {
+      return res.end(
+        `${thisYear.slice(2)}년 랭킹 TOP3：` +
+        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
+      );
+    }
   }
 
   // =====================
@@ -339,7 +379,9 @@ const server = http.createServer(async (req, res) => {
       const uYear = yearCounts[user] || 0;
 
       if (uMonth === 0 && uYear === 0) {
-        return res.end(`🌸${user}🌸님은 아직 출석 기록이 없습니다.`);
+        return lang === "en" 
+          ? `🌸${user}🌸 You have no attendance records yet.`
+          : `🌸${user}🌸님은 아직 출석 기록이 없습니다.`;
       }
 
       const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
@@ -348,17 +390,23 @@ const server = http.createServer(async (req, res) => {
       const sameMonthCount = Object.values(monthCounts).filter(c => c === uMonth).length;
       const sameYearCount = Object.values(yearCounts).filter(c => c === uYear).length;
 
-      const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `${mRank}등`;
-      const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `${yRank}등`;
-
       const monthNum = Number(thisMonth.split("-")[1]);
       const yearShort = thisYear.slice(2);
 
-      return res.end(`🌸${user}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
+      if (lang === "en") {
+        const mDisplay = sameMonthCount > 1 ? `Joint ${mRank}th` : `${mRank}th`;
+        const yDisplay = sameYearCount > 1 ? `Joint ${yRank}th` : `${yRank}th`;
+        const engMonth = getEnglishMonthName(monthNum);
+        return res.end(`🌸${user}🌸 ${engMonth} ${mDisplay}(${uMonth} times), ${thisYear} ${yDisplay}(${uYear} times)`);
+      } else {
+        const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `${mRank}등`;
+        const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `${yRank}등`;
+        return res.end(`🌸${user}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
+      }
 
     } catch (err) {
       console.error(err);
-      return res.end(`🌸${user}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
+      return res.end(lang === "en" ? `🌸${user}🌸 Error loading data.` : `🌸${user}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
     }
   }
   
