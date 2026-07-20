@@ -65,7 +65,7 @@ function getUserTokens(totalCount, usedTokenCount) {
 }
 
 // =====================
-// 방어권 소모를 반영한 스마트 스트릭 계산 함수 (하루 공백만 방어)
+// 방어권 소모를 반영한 스마트 스트릭 계산 함수 (연쇄 퐁당퐁당 방어 지원, 2일 연속 결석 시 차단)
 // =====================
 function calculateStreakWithTokens(today, dateSet) {
   const getPrevDate = (dateStr) => {
@@ -86,22 +86,22 @@ function calculateStreakWithTokens(today, dateSet) {
       streak++;
       checkDate = prev;
     } else {
-      // 전날 기록이 비어있음 -> '딱 하루'만 빠졌는지 확인 (다전날에 출석 기록이 있는지 체크)
+      // 전날 기록이 비어있음 -> 다전날(이틀 전) 기록 확인
       const prevOfPrev = getPrevDate(prev);
       
       if (dateSet.has(prevOfPrev)) {
+        // 다전날에 기록이 있다 = 딱 하루만 빠진 퐁당퐁당 공백! 방어권 사용 가능 여부 확인
         const currentTotal = dateSet.size;
         const available = getUserTokens(currentTotal, tokensUsed);
         
         if (available > 0) {
           tokensUsed++;
-          streak++;
-          checkDate = prevOfPrev; // 하루 공백을 방어권으로 메우고 그 전날로 이동
+          checkDate = prevOfPrev; // 공백을 방어권으로 넘기고 다전날로 이동 (스트릭 숫자는 증가 안 함)
         } else {
           break; // 방어권 없으면 컷
         }
       } else {
-        // 다전날에도 기록이 없다면? -> 2일 이상 연속으로 안 한 것이므로 방어 불가! 컷
+        // 다전날에도 기록이 없다 = 이틀 이상 연속으로 안 한 것(결석 ➔ 결석)! 방어 불가 컷
         break;
       }
     }
