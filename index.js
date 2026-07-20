@@ -37,10 +37,12 @@ function getGameDay() {
     d = prev.getUTCDate();
   }
 
+  const dateStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
   return {
-    date: `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-    month: `${y}-${String(m + 1).padStart(2, "0")}`,
-    year: `${y}`
+    date: dateStr,
+    month: dateStr.slice(0, 7), // "YYYY-MM"
+    year: dateStr.slice(0, 4)   // "YYYY" (날짜 기준 연도로 정확히 동기화)
   };
 }
 
@@ -56,18 +58,9 @@ function getEnglishMonthName(monthNumber) {
 }
 
 // =====================
-// 방어권 자동 계산 함수 (기본 1개 + 30회당 추가 - 사용한 개수)
+// 1회 누락 방어권이 적용된 연속출석(스트릭) 계산 함수 (2일 연속 결석 시 완전 리셋)
 // =====================
-function getUserTokens(totalCount, usedTokenCount) {
-  const earnedTokens = 1 + Math.floor(totalCount / 30);
-  const currentTokens = earnedTokens - usedTokenCount;
-  return Math.max(0, currentTokens);
-}
-
-// =====================
-// 방어권 소모를 반영한 스마트 스트릭 계산 함수 (연쇄 퐁당퐁당 방어 지원, 2일 연속 결석 시 차단)
-// =====================
-function calculateStreakWithTokens(today, dateSet) {
+function calculateProtectedStreak(today, dateSet) {
   const getPrevDate = (dateStr) => {
     const d = new Date(dateStr);
     d.setUTCDate(d.getUTCDate() - 1);
@@ -76,38 +69,30 @@ function calculateStreakWithTokens(today, dateSet) {
 
   let streak = 1;
   let checkDate = today;
-  let tokensUsed = 0;
+  let missedDays = 0;
+  let usedShield = false; // 방어권 사용 여부 추적
 
   while (true) {
     const prev = getPrevDate(checkDate);
     
     if (dateSet.has(prev)) {
-      // 바로 전날 출석 기록이 있으면 정상 누적
       streak++;
       checkDate = prev;
+      missedDays = 0;
     } else {
-      // 전날 기록이 비어있음 -> 다전날(이틀 전) 기록 확인
-      const prevOfPrev = getPrevDate(prev);
-      
-      if (dateSet.has(prevOfPrev)) {
-        // 다전날에 기록이 있다 = 딱 하루만 빠진 퐁당퐁당 공백! 방어권 사용 가능 여부 확인
-        const currentTotal = dateSet.size;
-        const available = getUserTokens(currentTotal, tokensUsed);
-        
-        if (available > 0) {
-          tokensUsed++;
-          checkDate = prevOfPrev; // 공백을 방어권으로 넘기고 다전날로 이동 (스트릭 숫자는 증가 안 함)
-        } else {
-          break; // 방어권 없으면 컷
-        }
+      if (missedDays === 0) {
+        // 딱 1번의 누락은 방어권 발동
+        missedDays++;
+        checkDate = prev;
+        usedShield = true;
       } else {
-        // 다전날에도 기록이 없다 = 이틀 이상 연속으로 안 한 것(결석 ➔ 결석)! 방어 불가 컷
+        // 2번 연속으로 비어있으면(2일 이상 결석) 방어권 소멸 및 스트릭 완전 차단(리셋)
         break;
       }
     }
   }
 
-  return { streak, tokensUsed };
+  return { streak, usedShield };
 }
 
 // =====================
@@ -118,7 +103,10 @@ const server = http.createServer(async (req, res) => {
 
   const parsed = url.parse(req.url, true);
   const path = parsed.pathname;
-  const user = (parsed.query.user || "").trim().toLowerCase();
+  
+  const rawUser = (parsed.query.user || "").trim();
+  const dbUser = rawUser.toLowerCase();
+  
   const lang = (parsed.query.lang || "ko").toLowerCase();
   const game = getGameDay();
 
@@ -130,12 +118,12 @@ const server = http.createServer(async (req, res) => {
   // 1️⃣ 출석 (/attend)
   // =====================
   if (path === "/attend") {
-    if (!user) return res.end("유저 없음");
+    if (!rawUser) return res.end("유저 없음");
 
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
-      .eq("username", user);
+      .eq("username", dbUser);
 
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const alreadyChecked = dateSet.has(today);
@@ -143,7 +131,7 @@ const server = http.createServer(async (req, res) => {
     if (!alreadyChecked) {
       await supabase.from("attendance").insert([
         {
-          username: user,
+          username: dbUser,
           date: today,
           month: thisMonth,
           year: thisYear,
@@ -153,8 +141,7 @@ const server = http.createServer(async (req, res) => {
       dateSet.add(today);
     }
 
-    const { streak, tokensUsed } = calculateStreakWithTokens(today, dateSet);
-    const isGraceUsed = tokensUsed > 0 && !alreadyChecked;
+    const { streak, usedShield } = calculateProtectedStreak(today, dateSet);
 
     const now = getKSTNow();
     let hour = now.getUTCHours();
@@ -171,40 +158,36 @@ const server = http.createServer(async (req, res) => {
     if (lang === "en") {
       let streakMsg = "";
       if (streak >= 2) {
-        if (isGraceUsed) {
-          streakMsg = ` 🛡️Streak Shield consumed, streak maintained! 🔥${streak}-day streak completed`;
-        } else {
-          streakMsg = ` 🔥${streak}-day streak completed`;
-        }
+        streakMsg = ` 🔥${streak}-day streak completed`;
       }
+
+      let shieldMsg = usedShield ? " (🛡️Oops, you missed a day, but your streak is protected!)" : "";
 
       if (alreadyChecked) {
         message = streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg} confirmed]🐾Have a great day!`
-          : `🌸${user}🌸 [${timeStr} Check-in confirmed]🐾Have a great day!`;
+          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg} confirmed${shieldMsg}]🐾Have a great day!`
+          : `🌸${rawUser}🌸 [${timeStr} Check-in confirmed${shieldMsg}]🐾Have a great day!`;
       } else {
         message = streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾Have a great day!`
-          : `🌸${user}🌸 [${timeStr} Check-in completed]🐾Have a great day!`;
+          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg}${shieldMsg}]🐾Have a great day!`
+          : `🌸${rawUser}🌸 [${timeStr} Check-in completed${shieldMsg}]🐾Have a great day!`;
       }
     } else {
       let streakMsg = "";
       if (streak >= 2) {
-        if (isGraceUsed) {
-          streakMsg = ` 🛡️하루 쉬어가셨네요:) 연속출석 보존권 적용! 🔥${streak}일 연속출석완료`;
-        } else {
-          streakMsg = ` 🔥${streak}일 연속출석완료`;
-        }
+        streakMsg = ` 🔥${streak}일 연속출석완료`;
       }
+
+      let shieldMsg = usedShield ? " (🛡️하루 쉬셨지만 연속출석은 지켜드렸어요)" : "";
 
       if (alreadyChecked) {
         message = streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg} 재확인]🐾오늘 하루도 힘내요!`
-          : `🌸${user}🌸 [출석완료 재확인]🐾오늘 하루도 힘내요!`;
+          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg} 재확인${shieldMsg}]🐾오늘 하루도 힘내요!`
+          : `🌸${rawUser}🌸 [출석완료 재확인${shieldMsg}]🐾오늘 하루도 힘내요!`;
       } else {
         message = streak >= 2
-          ? `🌸${user}🌸 [${timeStr}${streakMsg}]🐾오늘 하루도 힘내요!`
-          : `🌸${user}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
+          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg}${shieldMsg}]🐾오늘 하루도 힘내요!`
+          : `🌸${rawUser}🌸 [${timeStr} 출석완료${shieldMsg}]🐾오늘 하루도 힘내요!`;
       }
     }
 
@@ -215,39 +198,27 @@ const server = http.createServer(async (req, res) => {
   // 2️⃣ 개인 체크 (/check)
   // =====================
   if (path === "/check") {
-    if (!user) return res.end("유저 없음");
+    if (!rawUser) return res.end("유저 없음");
 
     const monthNumber = Number(thisMonth.split("-")[1]);
 
     const { count: monthCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
-      .eq("username", user)
+      .eq("username", dbUser)
       .eq("month", thisMonth);
 
     const { count: yearCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
-      .eq("username", user)
+      .eq("username", dbUser)
       .gte("date", `${thisYear}-01-01`)
       .lte("date", `${thisYear}-12-31`);
-
-    const { data: allLogs } = await supabase
-      .from("attendance")
-      .select("date")
-      .eq("username", user);
-    
-    const dateSet = new Set((allLogs ?? []).map(v => v.date));
-    const totalCount = dateSet.size;
-    
-    // 💡 방어권 소모 개수가 /check에서도 정확히 반영되도록 수정됨
-    const { tokensUsed } = calculateStreakWithTokens(today, dateSet);
-    const currentTokens = getUserTokens(totalCount, tokensUsed); 
 
     const { data: yearLogs } = await supabase
       .from("attendance")
       .select("date")
-      .eq("username", user)
+      .eq("username", dbUser)
       .gte("date", `${thisYear}-01-01`)
       .lte("date", `${thisYear}-12-31`);
 
@@ -280,12 +251,12 @@ const server = http.createServer(async (req, res) => {
       const engMonth = getEnglishMonthName(monthNumber);
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥Weekly Perfect Attendance ${missionCount} times | Streak Shield 🛡️${currentTokens} shields)`
+        `🌸${rawUser}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥7-day streak success ${missionCount} times)`
       );
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 ${missionCount}회, 🛡️연속출석 보존권 ${currentTokens}개)`
+        `🌸${rawUser}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥7일 연속출석 성공 ${missionCount}회)`
       );
     }
   }
@@ -363,7 +334,7 @@ const server = http.createServer(async (req, res) => {
   // 5️⃣ 개인 등수 확인 (/rankcheck)
   // =====================
   if (path === "/rankcheck") {
-    if (!user) return res.end("유저 없음");
+    if (!rawUser) return res.end("유저 없음");
 
     try {
       const { data: monthData } = await supabase
@@ -386,13 +357,13 @@ const server = http.createServer(async (req, res) => {
       const monthCounts = countMap(monthData);
       const yearCounts = countMap(yearData);
 
-      const uMonth = monthCounts[user] || 0;
-      const uYear = yearCounts[user] || 0;
+      const uMonth = monthCounts[dbUser] || 0;
+      const uYear = yearCounts[dbUser] || 0;
 
       if (uMonth === 0 && uYear === 0) {
         return lang === "en" 
-          ? `🌸${user}🌸 You have no attendance records yet.`
-          : `🌸${user}🌸님은 아직 출석 기록이 없습니다.`;
+          ? `🌸${rawUser}🌸 You have no attendance records yet.`
+          : `🌸${rawUser}🌸님은 아직 출석 기록이 없습니다.`;
       }
 
       const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
@@ -405,19 +376,19 @@ const server = http.createServer(async (req, res) => {
       const yearShort = thisYear.slice(2);
 
       if (lang === "en") {
-        const mDisplay = sameMonthCount > 1 ? `Joint ${mRank}th` : `${mRank}th`;
-        const yDisplay = sameYearCount > 1 ? `Joint ${yRank}th` : `${yRank}th`;
+        const mDisplay = sameMonthCount > 1 ? `Joint ${mRank}th` : `Solo ${mRank}th`;
+        const yDisplay = sameYearCount > 1 ? `Joint ${yRank}th` : `Solo ${yRank}th`;
         const engMonth = getEnglishMonthName(monthNum);
-        return res.end(`🌸${user}🌸 ${engMonth} ${mDisplay}(${uMonth} times), ${thisYear} ${yDisplay}(${uYear} times)`);
+        return res.end(`🌸${rawUser}🌸 ${engMonth} ${mDisplay}(${uMonth} times), ${thisYear} ${yDisplay}(${uYear} times)`);
       } else {
-        const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `${mRank}등`;
-        const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `${yRank}등`;
-        return res.end(`🌸${user}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
+        const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `단독 ${mRank}등`;
+        const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `단독 ${yRank}등`;
+        return res.end(`🌸${rawUser}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
       }
 
     } catch (err) {
       console.error(err);
-      return res.end(lang === "en" ? `🌸${user}🌸 Error loading data.` : `🌸${user}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
+      return res.end(lang === "en" ? `🌸${rawUser}🌸 Error loading data.` : `🌸${rawUser}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
     }
   }
   
