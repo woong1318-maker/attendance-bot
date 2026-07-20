@@ -247,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     } else {
       const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 연속출석 성공 ${missionCount}회)`
+        `🌸${user}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 개근상 획득! 달성횟수 ${missionCount}회)`
       );
     }
   }
