@@ -134,7 +134,6 @@ const server = http.createServer(async (req, res) => {
     const alreadyChecked = dateSet.has(today);
 
     let streak = 1;
-    let usedShield = false;
     let hasShield = userRecord ? userRecord.has_shield : true; 
 
     if (!alreadyChecked) {
@@ -156,7 +155,6 @@ const server = http.createServer(async (req, res) => {
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
         if (hasShield && isPrevPrevChecked) {
-          usedShield = true;
           hasShield = false; 
 
           let checkDate = prevPrevDate;
@@ -212,39 +210,13 @@ const server = http.createServer(async (req, res) => {
 
     let message;
     if (lang === "en") {
-      let streakMsg = "";
-      if (streak >= 2) {
-        streakMsg = ` 🔥${streak}-day streak completed`;
-      }
-
-      let shieldMsg = usedShield ? " (🛡️Oops, you missed a day, but your streak is protected!)" : "";
-
-      if (alreadyChecked) {
-        message = streak >= 2
-          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg} confirmed${shieldMsg}]🐾Have a great day!`
-          : `🌸${rawUser}🌸 [${timeStr} Check-in confirmed${shieldMsg}]🐾Have a great day!`;
-      } else {
-        message = streak >= 2
-          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg}${shieldMsg}]🐾Have a great day!`
-          : `🌸${rawUser}🌸 [${timeStr} Check-in completed${shieldMsg}]🐾Have a great day!`;
-      }
+      message = alreadyChecked
+        ? `🌸${rawUser}🌸 [${timeStr} Check-in reconfirmed]🐾Have a great day!`
+        : `🌸${rawUser}🌸 [${timeStr} Check-in completed]🐾Have a great day!`;
     } else {
-      let streakMsg = "";
-      if (streak >= 2) {
-        streakMsg = ` 🔥${streak}일 연속출석완료`;
-      }
-
-      let shieldMsg = usedShield ? " (🛡️하루 쉬셨지만 연속출석은 지켜드렸어요)" : "";
-
-      if (alreadyChecked) {
-        message = streak >= 2
-          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg} 재확인${shieldMsg}]🐾오늘 하루도 힘내요!`
-          : `🌸${rawUser}🌸 [출석완료 재확인${shieldMsg}]🐾오늘 하루도 힘내요!`;
-      } else {
-        message = streak >= 2
-          ? `🌸${rawUser}🌸 [${timeStr}${streakMsg}${shieldMsg}]🐾오늘 하루도 힘내요!`
-          : `🌸${rawUser}🌸 [${timeStr} 출석완료${shieldMsg}]🐾오늘 하루도 힘내요!`;
-      }
+      message = alreadyChecked
+        ? `🌸${rawUser}🌸 [${timeStr} 출석완료 재확인]🐾오늘 하루도 힘내요!`
+        : `🌸${rawUser}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
     }
 
     return res.end(message);
@@ -267,50 +239,14 @@ const server = http.createServer(async (req, res) => {
     );
     const monthCount = monthData.length;
 
-    const yearLogs = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("date")
-        .eq("username", dbUser)
-        .like("date", `${thisYear}%`)
-    );
-    const yearCount = yearLogs.length;
-
-    const sortedDates = [...(yearLogs ?? [])]
-      .map(v => new Date(v.date))
-      .sort((a, b) => a - b);
-    
-    let bestStreak = 0;
-    let tempStreak = 0;
-
-    for (let i = 0; i < sortedDates.length; i++) {
-      if (i === 0) {
-        tempStreak = 1;
-      } else {
-        const diffDays = Math.round((sortedDates[i].getTime() - sortedDates[i - 1].getTime()) / 86400000);
-        
-        if (diffDays === 1) {
-          tempStreak++;
-        } else if (diffDays === 2) {
-          tempStreak += 2;
-        } else {
-          tempStreak = 1;
-        }
-      }
-      bestStreak = Math.max(bestStreak, tempStreak);
-    }
-    const missionCount = Math.floor(bestStreak / 7);
-
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
-      const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${rawUser}🌸 ${engMonth} ${monthCount || 0} times, ${shortYear} year ${yearCount || 0} times (🔥7-day streak success ${missionCount} times)`
+        `🌸${rawUser}🌸 ${engMonth}: ${monthCount || 0} times`
       );
     } else {
-      const shortYear = thisYear.slice(2);
       return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 ${monthCount || 0}회, ${shortYear}년 ${yearCount || 0}회(🔥일주일 연속출석 성공 ${missionCount}회)`
+        `🌸${rawUser}🌸 ${monthNumber}월 출석: ${monthCount || 0}회`
       );
     }
   }
@@ -388,7 +324,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 5️⃣ 개인 등수 확인 (/rankcheck)
+  // 5️⃣ 개인 등수 확인 (/rankcheck) - 다시 추가됨
   // =====================
   if (path === "/rankcheck") {
     if (!rawUser) return res.end("유저 없음");
