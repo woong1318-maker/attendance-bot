@@ -89,14 +89,12 @@ const server = http.createServer(async (req, res) => {
   if (path === "/attend") {
     if (!rawUser) return res.end("유저 없음");
 
-    // 유저 정보 가져오기 (방어권 상태 확인용)
     const { data: userRecord } = await supabase
       .from("users")
       .select("has_shield")
       .eq("username", dbUser)
       .single();
 
-    // 전체 출석 로그 가져오기
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
@@ -110,12 +108,10 @@ const server = http.createServer(async (req, res) => {
     let hasShield = userRecord ? userRecord.has_shield : true; 
 
     if (!alreadyChecked) {
-      // 오늘 아직 출석 안 한 경우
       const prevDate = getPrevDate(today);
       const isYesterdayChecked = dateSet.has(prevDate);
 
       if (isYesterdayChecked) {
-        // 어제 출석함 -> 오늘(1) + 어제부터 거슬러 올라가며 연속 일수 계산
         let checkDate = prevDate;
         let currentStreakCount = 1; 
         
@@ -126,7 +122,6 @@ const server = http.createServer(async (req, res) => {
         streak = currentStreakCount;
         hasShield = userRecord ? userRecord.has_shield : true;
       } else {
-        // 어제 결석함 -> 방어권 확인
         const prevPrevDate = getPrevDate(prevDate);
         const isPrevPrevChecked = dateSet.has(prevPrevDate);
 
@@ -135,7 +130,7 @@ const server = http.createServer(async (req, res) => {
           hasShield = false; 
 
           let checkDate = prevPrevDate;
-          let currentStreakCount = 2; // 오늘 + 방어권 어제
+          let currentStreakCount = 2; 
           
           while (dateSet.has(checkDate)) {
             currentStreakCount++;
@@ -148,7 +143,6 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // 오늘 출석 기록 삽입
       await supabase.from("attendance").insert([
         {
           username: dbUser,
@@ -159,15 +153,12 @@ const server = http.createServer(async (req, res) => {
         }
       ]);
 
-      // 방금 넣은 오늘 날짜를 dateSet에 즉시 반영 (아래 스트릭 재계산을 위해)
       dateSet.add(today);
 
-      // 유저 정보 업데이트
       await supabase
         .from("users")
         .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
     } else {
-      // 오늘 이미 출석한 경우 -> 오늘을 포함하여 안전하게 역추적 계산
       let checkDate = today;
       let currentStreakCount = 0;
       
@@ -247,15 +238,13 @@ const server = http.createServer(async (req, res) => {
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", dbUser)
-      .gte("date", `${thisYear}-01-01`)
-      .lte("date", `${thisYear}-12-31`);
+      .eq("year", thisYear); // 수정: 문자열 범위 대신 정확한 year 컬럼 매칭
 
     const { data: yearLogs } = await supabase
       .from("attendance")
       .select("date")
       .eq("username", dbUser)
-      .gte("date", `${thisYear}-01-01`)
-      .lte("date", `${thisYear}-12-31`);
+      .eq("year", thisYear); // 수정
 
     const sortedDates = [...(yearLogs ?? [])]
       .map(v => new Date(v.date))
@@ -338,8 +327,7 @@ const server = http.createServer(async (req, res) => {
     const { data } = await supabase
       .from("attendance")
       .select("username")
-      .gte("date", `${thisYear}-01-01`)
-      .lte("date", `${thisYear}-12-31`);
+      .eq("year", thisYear); // 수정: year 컬럼으로 정확히 집계
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -380,8 +368,7 @@ const server = http.createServer(async (req, res) => {
       const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
-        .gte("date", `${thisYear}-01-01`)
-        .lte("date", `${thisYear}-12-31`);
+        .eq("year", thisYear); // 수정: .gte/.lte 대신 .eq("year", thisYear)로 수정하여 데이터 누락 방지
 
       const countMap = (data) => {
         const c = {};
