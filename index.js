@@ -234,17 +234,18 @@ const server = http.createServer(async (req, res) => {
       .eq("username", dbUser)
       .eq("month", thisMonth);
 
+    // 수정: date 필드에서 해당 년도로 시작하는 데이터만 안전하게 필터링
     const { count: yearCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
       .eq("username", dbUser)
-      .eq("year", thisYear); // 수정: 문자열 범위 대신 정확한 year 컬럼 매칭
+      .like("date", `${thisYear}%`);
 
     const { data: yearLogs } = await supabase
       .from("attendance")
       .select("date")
       .eq("username", dbUser)
-      .eq("year", thisYear); // 수정
+      .like("date", `${thisYear}%`);
 
     const sortedDates = [...(yearLogs ?? [])]
       .map(v => new Date(v.date))
@@ -327,7 +328,7 @@ const server = http.createServer(async (req, res) => {
     const { data } = await supabase
       .from("attendance")
       .select("username")
-      .eq("year", thisYear); // 수정: year 컬럼으로 정확히 집계
+      .like("date", `${thisYear}%`); // 수정: date 기반 필터링
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -368,7 +369,7 @@ const server = http.createServer(async (req, res) => {
       const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
-        .eq("year", thisYear); // 수정: .gte/.lte 대신 .eq("year", thisYear)로 수정하여 데이터 누락 방지
+        .like("date", `${thisYear}%`); // 수정: date 기반 필터링
 
       const countMap = (data) => {
         const c = {};
