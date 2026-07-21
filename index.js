@@ -255,7 +255,7 @@ const server = http.createServer(async (req, res) => {
       );
     } else {
       return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 총 출석 : ${yearCount || 0}회`
+        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 : ${yearCount || 0}회`
       );
     }
   }
