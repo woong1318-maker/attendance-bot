@@ -255,7 +255,7 @@ const server = http.createServer(async (req, res) => {
       );
     } else {
       return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 : ${yearCount || 0}회`
+        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 총 출석 : ${yearCount || 0}회`
       );
     }
   }
@@ -378,17 +378,16 @@ const server = http.createServer(async (req, res) => {
       const sameYearCount = Object.values(yearCounts).filter(c => c === uYear).length;
 
       const monthNum = Number(thisMonth.split("-")[1]);
-      const yearShort = thisYear.slice(2);
 
       if (lang === "en") {
         const mDisplay = sameMonthCount > 1 ? `Joint ${mRank}th` : `Solo ${mRank}th`;
         const yDisplay = sameYearCount > 1 ? `Joint ${yRank}th` : `Solo ${yRank}th`;
         const engMonth = getEnglishMonthName(monthNum);
-        return res.end(`🌸${rawUser}🌸 ${engMonth} ${mDisplay}(${uMonth} times), ${thisYear} ${yDisplay}(${uYear} times)`);
+        return res.end(`🌸${rawUser}🌸 ${engMonth} ${mDisplay}(${uMonth} times), This year ${yDisplay}(${uYear} times)`);
       } else {
         const mDisplay = sameMonthCount > 1 ? `공동 ${mRank}등` : `단독 ${mRank}등`;
         const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `단독 ${yRank}등`;
-        return res.end(`🌸${rawUser}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), ${yearShort}년 ${yDisplay}(${uYear}회)`);
+        return res.end(`🌸${rawUser}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), 올해 ${yDisplay}(${uYear}회)`);
       }
 
     } catch (err) {
