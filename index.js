@@ -65,6 +65,34 @@ function getPrevDate(dateStr) {
 }
 
 // =====================
+// 페이징 제한 우회 데이터 조회 헬퍼
+// =====================
+async function fetchAllData(queryBuilder) {
+  let allData = [];
+  let rangeSize = 1000;
+  let from = 0;
+  let to = rangeSize - 1;
+  let keepFetching = true;
+
+  while (keepFetching) {
+    const { data, error } = await queryBuilder.range(from, to);
+
+    if (error || !data || data.length === 0) {
+      keepFetching = false;
+    } else {
+      allData = allData.concat(data);
+      if (data.length < rangeSize) {
+        keepFetching = false;
+      } else {
+        from += rangeSize;
+        to += rangeSize;
+      }
+    }
+  }
+  return allData;
+}
+
+// =====================
 // 서버 구동
 // =====================
 const server = http.createServer(async (req, res) => {
@@ -95,11 +123,12 @@ const server = http.createServer(async (req, res) => {
       .eq("username", dbUser)
       .single();
 
-    const { data: allLogs } = await supabase
-      .from("attendance")
-      .select("date")
-      .eq("username", dbUser)
-      .range(0, 9999);
+    const allLogs = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("date")
+        .eq("username", dbUser)
+    );
 
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const alreadyChecked = dateSet.has(today);
@@ -229,24 +258,23 @@ const server = http.createServer(async (req, res) => {
 
     const monthNumber = Number(thisMonth.split("-")[1]);
 
-    const { count: monthCount } = await supabase
-      .from("attendance")
-      .select("*", { count: "exact", head: true })
-      .eq("username", dbUser)
-      .eq("month", thisMonth);
+    const monthData = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("*")
+        .eq("username", dbUser)
+        .eq("month", thisMonth)
+    );
+    const monthCount = monthData.length;
 
-    const { count: yearCount } = await supabase
-      .from("attendance")
-      .select("*", { count: "exact", head: true })
-      .eq("username", dbUser)
-      .like("date", `${thisYear}%`);
-
-    const { data: yearLogs } = await supabase
-      .from("attendance")
-      .select("date")
-      .eq("username", dbUser)
-      .like("date", `${thisYear}%`)
-      .range(0, 9999); // 페이징 제한 해제 (최대 1만건)
+    const yearLogs = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("date")
+        .eq("username", dbUser)
+        .like("date", `${thisYear}%`)
+    );
+    const yearCount = yearLogs.length;
 
     const sortedDates = [...(yearLogs ?? [])]
       .map(v => new Date(v.date))
@@ -292,11 +320,12 @@ const server = http.createServer(async (req, res) => {
   // =====================
   if (path === "/rank") {
     const monthNumber = Number(thisMonth.split("-")[1]);
-    const { data } = await supabase
-      .from("attendance")
-      .select("username")
-      .eq("month", thisMonth)
-      .range(0, 9999); // 페이징 제한 해제
+    const data = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("username")
+        .eq("month", thisMonth)
+    );
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -327,11 +356,12 @@ const server = http.createServer(async (req, res) => {
   // 4️⃣ 연간 랭킹 (/legend)
   // =====================
   if (path === "/legend") {
-    const { data } = await supabase
-      .from("attendance")
-      .select("username")
-      .like("date", `${thisYear}%`)
-      .range(0, 9999); // 페이징 제한 해제
+    const data = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("username")
+        .like("date", `${thisYear}%`)
+    );
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -364,17 +394,19 @@ const server = http.createServer(async (req, res) => {
     if (!rawUser) return res.end("유저 없음");
 
     try {
-      const { data: monthData } = await supabase
-        .from("attendance")
-        .select("username")
-        .eq("month", thisMonth)
-        .range(0, 9999); // 페이징 제한 해제
+      const monthData = await fetchAllData(
+        supabase
+          .from("attendance")
+          .select("username")
+          .eq("month", thisMonth)
+      );
 
-      const { data: yearData } = await supabase
-        .from("attendance")
-        .select("username")
-        .like("date", `${thisYear}%`)
-        .range(0, 9999); // 페이징 제한 해제
+      const yearData = await fetchAllData(
+        supabase
+          .from("attendance")
+          .select("username")
+          .like("date", `${thisYear}%`)
+      );
 
       const countMap = (data) => {
         const c = {};
@@ -389,9 +421,9 @@ const server = http.createServer(async (req, res) => {
       const uYear = yearCounts[dbUser] || 0;
 
       if (uMonth === 0 && uYear === 0) {
-        return lang === "en" 
+        return res.end(lang === "en" 
           ? `🌸${rawUser}🌸 You have no attendance records yet.`
-          : `🌸${rawUser}🌸님은 아직 출석 기록이 없습니다.`;
+          : `🌸${rawUser}🌸님은 아직 출석 기록이 없습니다.`);
       }
 
       const mRank = Object.values(monthCounts).filter(c => c > uMonth).length + 1;
