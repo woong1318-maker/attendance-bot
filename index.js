@@ -98,7 +98,8 @@ const server = http.createServer(async (req, res) => {
     const { data: allLogs } = await supabase
       .from("attendance")
       .select("date")
-      .eq("username", dbUser);
+      .eq("username", dbUser)
+      .range(0, 9999);
 
     const dateSet = new Set((allLogs ?? []).map(v => v.date));
     const alreadyChecked = dateSet.has(today);
@@ -234,7 +235,6 @@ const server = http.createServer(async (req, res) => {
       .eq("username", dbUser)
       .eq("month", thisMonth);
 
-    // 수정: date 필드에서 해당 년도로 시작하는 데이터만 안전하게 필터링
     const { count: yearCount } = await supabase
       .from("attendance")
       .select("*", { count: "exact", head: true })
@@ -245,7 +245,8 @@ const server = http.createServer(async (req, res) => {
       .from("attendance")
       .select("date")
       .eq("username", dbUser)
-      .like("date", `${thisYear}%`);
+      .like("date", `${thisYear}%`)
+      .range(0, 9999); // 페이징 제한 해제 (최대 1만건)
 
     const sortedDates = [...(yearLogs ?? [])]
       .map(v => new Date(v.date))
@@ -294,7 +295,8 @@ const server = http.createServer(async (req, res) => {
     const { data } = await supabase
       .from("attendance")
       .select("username")
-      .eq("month", thisMonth);
+      .eq("month", thisMonth)
+      .range(0, 9999); // 페이징 제한 해제
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -328,7 +330,8 @@ const server = http.createServer(async (req, res) => {
     const { data } = await supabase
       .from("attendance")
       .select("username")
-      .like("date", `${thisYear}%`); // 수정: date 기반 필터링
+      .like("date", `${thisYear}%`)
+      .range(0, 9999); // 페이징 제한 해제
 
     const count = {};
     (data ?? []).forEach(d => {
@@ -364,12 +367,14 @@ const server = http.createServer(async (req, res) => {
       const { data: monthData } = await supabase
         .from("attendance")
         .select("username")
-        .eq("month", thisMonth);
+        .eq("month", thisMonth)
+        .range(0, 9999); // 페이징 제한 해제
 
       const { data: yearData } = await supabase
         .from("attendance")
         .select("username")
-        .like("date", `${thisYear}%`); // 수정: date 기반 필터링
+        .like("date", `${thisYear}%`)
+        .range(0, 9999); // 페이징 제한 해제
 
       const countMap = (data) => {
         const c = {};
