@@ -239,14 +239,23 @@ const server = http.createServer(async (req, res) => {
     );
     const monthCount = monthData.length;
 
+    const yearLogs = await fetchAllData(
+      supabase
+        .from("attendance")
+        .select("date")
+        .eq("username", dbUser)
+        .like("date", `${thisYear}%`)
+    );
+    const yearCount = yearLogs.length;
+
     if (lang === "en") {
       const engMonth = getEnglishMonthName(monthNumber);
       return res.end(
-        `🌸${rawUser}🌸 ${engMonth}: ${monthCount || 0} times`
+        `🌸${rawUser}🌸 ${engMonth} : ${monthCount || 0} times, Total attendance this year : ${yearCount || 0} times`
       );
     } else {
       return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 출석: ${monthCount || 0}회`
+        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 : ${yearCount || 0}회`
       );
     }
   }
@@ -324,7 +333,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =====================
-  // 5️⃣ 개인 등수 확인 (/rankcheck) - 다시 추가됨
+  // 5️⃣ 개인 등수 확인 (/rankcheck)
   // =====================
   if (path === "/rankcheck") {
     if (!rawUser) return res.end("유저 없음");
