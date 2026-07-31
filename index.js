@@ -65,9 +65,9 @@ function getPrevDate(dateStr) {
 }
 
 // =====================
-// 페이징 제한 우회 데이터 조회 헬퍼
+// 페이징 제한 우회 데이터 조회 헬퍼 (수정: 쿼리 생성 함수를 받아 무한 루프 방지)
 // =====================
-async function fetchAllData(queryBuilder) {
+async function fetchAllData(queryFn) {
   let allData = [];
   let rangeSize = 1000;
   let from = 0;
@@ -75,7 +75,7 @@ async function fetchAllData(queryBuilder) {
   let keepFetching = true;
 
   while (keepFetching) {
-    const { data, error } = await queryBuilder.range(from, to);
+    const { data, error } = await queryFn().range(from, to);
 
     if (error || !data || data.length === 0) {
       keepFetching = false;
@@ -98,255 +98,266 @@ async function fetchAllData(queryBuilder) {
 const server = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
 
-  const parsed = url.parse(req.url, true);
-  const path = parsed.pathname;
-  
-  const rawUser = (parsed.query.user || "").trim();
-  const dbUser = rawUser.toLowerCase();
-  
-  const lang = (parsed.query.lang || "ko").toLowerCase();
-  const game = getGameDay();
+  // 안전성 강화: 서버 전체 요청 구간 예외 처리
+  try {
+    const parsed = url.parse(req.url, true);
+    const path = parsed.pathname;
+    
+    const rawUser = (parsed.query.user || "").trim();
+    const dbUser = rawUser.toLowerCase();
+    
+    const lang = (parsed.query.lang || "ko").toLowerCase();
+    const game = getGameDay();
 
-  const today = game.date;
-  const thisMonth = game.month;
-  const thisYear = game.year;
+    const today = game.date;
+    const thisMonth = game.month;
+    const thisYear = game.year;
 
-  // =====================
-  // 1️⃣ 출석 (/attend)
-  // =====================
-  if (path === "/attend") {
-    if (!rawUser) return res.end("유저 없음");
+    // =====================
+    // 1️⃣ 출석 (/attend)
+    // =====================
+    if (path === "/attend") {
+      if (!rawUser) return res.end("유저 없음");
 
-    const { data: userRecord } = await supabase
-      .from("users")
-      .select("has_shield")
-      .eq("username", dbUser)
-      .single();
-
-    const allLogs = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("date")
+      // .single() 대신 .maybeSingle()을 써서 신규 유저 조회 시 에러 안 뜨게 방지
+      const { data: userRecord } = await supabase
+        .from("users")
+        .select("has_shield")
         .eq("username", dbUser)
-    );
+        .maybeSingle();
 
-    const dateSet = new Set((allLogs ?? []).map(v => v.date));
-    const alreadyChecked = dateSet.has(today);
+      const allLogs = await fetchAllData(() =>
+        supabase
+          .from("attendance")
+          .select("date")
+          .eq("username", dbUser)
+      );
 
-    let streak = 1;
-    let hasShield = userRecord ? userRecord.has_shield : true; 
+      const dateSet = new Set((allLogs ?? []).map(v => v.date));
+      const alreadyChecked = dateSet.has(today);
 
-    if (!alreadyChecked) {
-      const prevDate = getPrevDate(today);
-      const isYesterdayChecked = dateSet.has(prevDate);
+      let streak = 1;
+      let hasShield = userRecord ? userRecord.has_shield : true; 
 
-      if (isYesterdayChecked) {
-        let checkDate = prevDate;
-        let currentStreakCount = 1; 
-        
-        while (dateSet.has(checkDate)) {
-          currentStreakCount++;
-          checkDate = getPrevDate(checkDate);
-        }
-        streak = currentStreakCount;
-        hasShield = userRecord ? userRecord.has_shield : true;
-      } else {
-        const prevPrevDate = getPrevDate(prevDate);
-        const isPrevPrevChecked = dateSet.has(prevPrevDate);
+      if (!alreadyChecked) {
+        const prevDate = getPrevDate(today);
+        const isYesterdayChecked = dateSet.has(prevDate);
 
-        if (hasShield && isPrevPrevChecked) {
-          hasShield = false; 
-
-          let checkDate = prevPrevDate;
-          let currentStreakCount = 2; 
+        if (isYesterdayChecked) {
+          let checkDate = prevDate;
+          let currentStreakCount = 1; 
           
           while (dateSet.has(checkDate)) {
             currentStreakCount++;
             checkDate = getPrevDate(checkDate);
           }
           streak = currentStreakCount;
+          hasShield = userRecord ? userRecord.has_shield : true;
         } else {
-          streak = 1;
-          hasShield = true; 
+          const prevPrevDate = getPrevDate(prevDate);
+          const isPrevPrevChecked = dateSet.has(prevPrevDate);
+
+          if (hasShield && isPrevPrevChecked) {
+            hasShield = false; 
+
+            let checkDate = prevPrevDate;
+            let currentStreakCount = 2; 
+            
+            while (dateSet.has(checkDate)) {
+              currentStreakCount++;
+              checkDate = getPrevDate(checkDate);
+            }
+            streak = currentStreakCount;
+          } else {
+            streak = 1;
+            hasShield = true; 
+          }
         }
+
+        await supabase.from("attendance").insert([
+          {
+            username: dbUser,
+            date: today,
+            month: thisMonth,
+            year: thisYear,
+            time: Date.now()
+          }
+        ]);
+
+        dateSet.add(today);
+
+        await supabase
+          .from("users")
+          .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
+      } else {
+        let checkDate = today;
+        let currentStreakCount = 0;
+        
+        while (dateSet.has(checkDate)) {
+          currentStreakCount++;
+          checkDate = getPrevDate(checkDate);
+        }
+        streak = currentStreakCount > 0 ? currentStreakCount : 1;
       }
 
-      await supabase.from("attendance").insert([
-        {
-          username: dbUser,
-          date: today,
-          month: thisMonth,
-          year: thisYear,
-          time: Date.now()
-        }
-      ]);
+      const now = getKSTNow();
+      let hour = now.getUTCHours();
+      let min = now.getUTCMinutes();
 
-      dateSet.add(today);
+      const ampm = hour >= 12 ? "PM" : "AM";
+      const hour12 = hour % 12 || 12;
 
-      await supabase
-        .from("users")
-        .upsert({ username: dbUser, streak: streak, last_date: today, has_shield: hasShield });
-    } else {
-      let checkDate = today;
-      let currentStreakCount = 0;
-      
-      while (dateSet.has(checkDate)) {
-        currentStreakCount++;
-        checkDate = getPrevDate(checkDate);
+      const timeStr =
+        `${String(hour12).padStart(2, "0")}:` +
+        `${String(min).padStart(2, "0")}${ampm}`;
+
+      let message;
+      if (lang === "en") {
+        message = alreadyChecked
+          ? `🌸${rawUser}🌸 [${timeStr} Check-in reconfirmed]🐾Have a great day!`
+          : `🌸${rawUser}🌸 [${timeStr} Check-in completed]🐾Have a great day!`;
+      } else {
+        message = alreadyChecked
+          ? `🌸${rawUser}🌸 [${timeStr} 출석완료 재확인]🐾오늘 하루도 힘내요!`
+          : `🌸${rawUser}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
       }
-      streak = currentStreakCount > 0 ? currentStreakCount : 1;
+
+      return res.end(message);
     }
 
-    const now = getKSTNow();
-    let hour = now.getUTCHours();
-    let min = now.getUTCMinutes();
+    // =====================
+    // 2️⃣ 개인 체크 (/check)
+    // =====================
+    if (path === "/check") {
+      if (!rawUser) return res.end("유저 없음");
 
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const hour12 = hour % 12 || 12;
+      const [currY, currM] = thisMonth.split("-").map(Number);
 
-    const timeStr =
-      `${String(hour12).padStart(2, "0")}:` +
-      `${String(min).padStart(2, "0")}${ampm}`;
+      let prevY = currY;
+      let prevM = currM - 1;
+      if (prevM === 0) {
+        prevM = 12;
+        prevY -= 1;
+      }
+      const prevMonth = `${prevY}-${String(prevM).padStart(2, "0")}`;
 
-    let message;
-    if (lang === "en") {
-      message = alreadyChecked
-        ? `🌸${rawUser}🌸 [${timeStr} Check-in reconfirmed]🐾Have a great day!`
-        : `🌸${rawUser}🌸 [${timeStr} Check-in completed]🐾Have a great day!`;
-    } else {
-      message = alreadyChecked
-        ? `🌸${rawUser}🌸 [${timeStr} 출석완료 재확인]🐾오늘 하루도 힘내요!`
-        : `🌸${rawUser}🌸 [${timeStr} 출석완료]🐾오늘 하루도 힘내요!`;
+      const monthData = await fetchAllData(() =>
+        supabase
+          .from("attendance")
+          .select("*")
+          .eq("username", dbUser)
+          .eq("month", thisMonth)
+      );
+      const monthCount = monthData.length;
+
+      const prevMonthData = await fetchAllData(() =>
+        supabase
+          .from("attendance")
+          .select("*")
+          .eq("username", dbUser)
+          .eq("month", prevMonth)
+      );
+      const prevMonthCount = prevMonthData.length;
+
+      if (lang === "en") {
+        const engMonth = getEnglishMonthName(currM);
+        const prevEngMonth = getEnglishMonthName(prevM);
+        return res.end(
+          `🌸${rawUser}🌸 ${engMonth}(${monthCount || 0} times), ${prevEngMonth}(${prevMonthCount || 0} times)`
+        );
+      } else {
+        return res.end(
+          `🌸${rawUser}🌸 ${currM}월(${monthCount || 0}회), ${prevM}월(${prevMonthCount || 0}회)`
+        );
+      }
     }
 
-    return res.end(message);
-  }
-
-  // =====================
-  // 2️⃣ 개인 체크 (/check)
-  // =====================
-  if (path === "/check") {
-    if (!rawUser) return res.end("유저 없음");
-
-    const monthNumber = Number(thisMonth.split("-")[1]);
-
-    const monthData = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("*")
-        .eq("username", dbUser)
-        .eq("month", thisMonth)
-    );
-    const monthCount = monthData.length;
-
-    const yearLogs = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("date")
-        .eq("username", dbUser)
-        .like("date", `${thisYear}%`)
-    );
-    const yearCount = yearLogs.length;
-
-    if (lang === "en") {
-      const engMonth = getEnglishMonthName(monthNumber);
-      return res.end(
-        `🌸${rawUser}🌸 ${engMonth} : ${monthCount || 0} times, Total attendance this year : ${yearCount || 0} times`
-      );
-    } else {
-      return res.end(
-        `🌸${rawUser}🌸 ${monthNumber}월 : ${monthCount || 0}회, 올해 : ${yearCount || 0}회`
-      );
-    }
-  }
-
-  // =====================
-  // 3️⃣ 월 랭킹 (/rank)
-  // =====================
-  if (path === "/rank") {
-    const monthNumber = Number(thisMonth.split("-")[1]);
-    const data = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("username")
-        .eq("month", thisMonth)
-    );
-
-    const count = {};
-    (data ?? []).forEach(d => {
-      count[d.username] = (count[d.username] || 0) + 1;
-    });
-
-    const top = Object.entries(count)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-
-    const medals = ["🥇", "🥈", "🥉"];
-
-    if (lang === "en") {
-      const engMonth = getEnglishMonthName(monthNumber);
-      return res.end(
-        `${engMonth} Ranking TOP3：` +
-        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
-      );
-    } else {
-      return res.end(
-        `${monthNumber}월 랭킹 TOP3：` +
-        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
-      );
-    }
-  }
-
-  // =====================
-  // 4️⃣ 연간 랭킹 (/legend)
-  // =====================
-  if (path === "/legend") {
-    const data = await fetchAllData(
-      supabase
-        .from("attendance")
-        .select("username")
-        .like("date", `${thisYear}%`)
-    );
-
-    const count = {};
-    (data ?? []).forEach(d => {
-      count[d.username] = (count[d.username] || 0) + 1;
-    });
-
-    const top = Object.entries(count)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-
-    const medals = ["🥇", "🥈", "🥉"];
-
-    if (lang === "en") {
-      return res.end(
-        `${thisYear} Year Ranking TOP3：` +
-        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
-      );
-    } else {
-      return res.end(
-        `${thisYear.slice(2)}년 랭킹 TOP3：` +
-        top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
-      );
-    }
-  }
-
-  // =====================
-  // 5️⃣ 개인 등수 확인 (/rankcheck)
-  // =====================
-  if (path === "/rankcheck") {
-    if (!rawUser) return res.end("유저 없음");
-
-    try {
-      const monthData = await fetchAllData(
+    // =====================
+    // 3️⃣ 월 랭킹 (/rank)
+    // =====================
+    if (path === "/rank") {
+      const monthNumber = Number(thisMonth.split("-")[1]);
+      const data = await fetchAllData(() =>
         supabase
           .from("attendance")
           .select("username")
           .eq("month", thisMonth)
       );
 
-      const yearData = await fetchAllData(
+      const count = {};
+      (data ?? []).forEach(d => {
+        count[d.username] = (count[d.username] || 0) + 1;
+      });
+
+      const top = Object.entries(count)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+
+      const medals = ["🥇", "🥈", "🥉"];
+
+      if (lang === "en") {
+        const engMonth = getEnglishMonthName(monthNumber);
+        return res.end(
+          `${engMonth} Ranking TOP3：` +
+          top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
+        );
+      } else {
+        return res.end(
+          `${monthNumber}월 랭킹 TOP3：` +
+          top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
+        );
+      }
+    }
+
+    // =====================
+    // 4️⃣ 연간 랭킹 (/legend)
+    // =====================
+    if (path === "/legend") {
+      const data = await fetchAllData(() =>
+        supabase
+          .from("attendance")
+          .select("username")
+          .like("date", `${thisYear}%`)
+      );
+
+      const count = {};
+      (data ?? []).forEach(d => {
+        count[d.username] = (count[d.username] || 0) + 1;
+      });
+
+      const top = Object.entries(count)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3);
+
+      const medals = ["🥇", "🥈", "🥉"];
+
+      if (lang === "en") {
+        return res.end(
+          `${thisYear} Year Ranking TOP3：` +
+          top.map((v, i) => `${medals[i]}${v[0]}(${v[1]} times)`).join(", ")
+        );
+      } else {
+        return res.end(
+          `${thisYear.slice(2)}년 랭킹 TOP3：` +
+          top.map((v, i) => `${medals[i]}${v[0]}(${v[1]}회)`).join(", ")
+        );
+      }
+    }
+
+    // =====================
+    // 5️⃣ 개인 등수 확인 (/rankcheck)
+    // =====================
+    if (path === "/rankcheck") {
+      if (!rawUser) return res.end("유저 없음");
+
+      const monthData = await fetchAllData(() =>
+        supabase
+          .from("attendance")
+          .select("username")
+          .eq("month", thisMonth)
+      );
+
+      const yearData = await fetchAllData(() =>
         supabase
           .from("attendance")
           .select("username")
@@ -389,14 +400,13 @@ const server = http.createServer(async (req, res) => {
         const yDisplay = sameYearCount > 1 ? `공동 ${yRank}등` : `단독 ${yRank}등`;
         return res.end(`🌸${rawUser}🌸 ${monthNum}월 ${mDisplay}(${uMonth}회), 올해 ${yDisplay}(${uYear}회)`);
       }
-
-    } catch (err) {
-      console.error(err);
-      return res.end(lang === "en" ? `🌸${rawUser}🌸 Error loading data.` : `🌸${rawUser}🌸 데이터를 불러오는 중 오류가 발생했습니다.`);
     }
+    
+    res.end("OK");
+  } catch (err) {
+    console.error("서버 처리 중 오류 발생:", err);
+    return res.end("오류가 발생했습니다.");
   }
-  
-  res.end("OK");
 });
 
 const PORT = process.env.PORT || 3000;
