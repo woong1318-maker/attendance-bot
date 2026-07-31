@@ -65,7 +65,7 @@ function getPrevDate(dateStr) {
 }
 
 // =====================
-// 페이징 제한 우회 데이터 조회 헬퍼 (수정: 쿼리 생성 함수를 받아 무한 루프 방지)
+// 페이징 제한 우회 데이터 조회 헬퍼
 // =====================
 async function fetchAllData(queryFn) {
   let allData = [];
@@ -98,7 +98,6 @@ async function fetchAllData(queryFn) {
 const server = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
 
-  // 안전성 강화: 서버 전체 요청 구간 예외 처리
   try {
     const parsed = url.parse(req.url, true);
     const path = parsed.pathname;
@@ -119,7 +118,6 @@ const server = http.createServer(async (req, res) => {
     if (path === "/attend") {
       if (!rawUser) return res.end("유저 없음");
 
-      // .single() 대신 .maybeSingle()을 써서 신규 유저 조회 시 에러 안 뜨게 방지
       const { data: userRecord } = await supabase
         .from("users")
         .select("has_shield")
@@ -261,14 +259,24 @@ const server = http.createServer(async (req, res) => {
 
       if (lang === "en") {
         const engMonth = getEnglishMonthName(currM);
-        const prevEngMonth = getEnglishMonthName(prevM);
-        return res.end(
-          `🌸${rawUser}🌸 ${engMonth}(${monthCount || 0} times), ${prevEngMonth}(${prevMonthCount || 0} times)`
-        );
+        let responseStr = `🌸${rawUser}🌸 ${engMonth}(${monthCount || 0} times)`;
+        
+        // 지난달 기록이 1회 이상일 때만 추가 표시
+        if (prevMonthCount > 0) {
+          const prevEngMonth = getEnglishMonthName(prevM);
+          responseStr += `, ${prevEngMonth}(${prevMonthCount} times)`;
+        }
+        
+        return res.end(responseStr);
       } else {
-        return res.end(
-          `🌸${rawUser}🌸 ${currM}월(${monthCount || 0}회), ${prevM}월(${prevMonthCount || 0}회)`
-        );
+        let responseStr = `🌸${rawUser}🌸 ${currM}월(${monthCount || 0}회)`;
+        
+        // 지난달 기록이 1회 이상일 때만 추가 표시
+        if (prevMonthCount > 0) {
+          responseStr += `, ${prevM}월(${prevMonthCount}회)`;
+        }
+        
+        return res.end(responseStr);
       }
     }
 
