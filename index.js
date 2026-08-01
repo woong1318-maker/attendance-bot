@@ -121,14 +121,14 @@ const server = http.createServer(async (req, res) => {
       const { data: userRecord } = await supabase
         .from("users")
         .select("has_shield")
-        .eq("username", dbUser)
+        .ilike("username", dbUser)
         .maybeSingle();
 
       const allLogs = await fetchAllData(() =>
         supabase
           .from("attendance")
           .select("date")
-          .eq("username", dbUser)
+          .ilike("username", dbUser)
       );
 
       const dateSet = new Set((allLogs ?? []).map(v => v.date));
@@ -242,20 +242,20 @@ const server = http.createServer(async (req, res) => {
       const monthData = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("*")
-          .eq("username", dbUser)
-          .eq("month", thisMonth)
+          .select("date")
+          .ilike("username", dbUser)
+          .like("date", `${thisMonth}%`)
       );
-      const monthCount = monthData.length;
+      const monthCount = new Set((monthData ?? []).map(v => v.date)).size;
 
       const prevMonthData = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("*")
-          .eq("username", dbUser)
-          .eq("month", prevMonth)
+          .select("date")
+          .ilike("username", dbUser)
+          .like("date", `${prevMonth}%`)
       );
-      const prevMonthCount = prevMonthData.length;
+      const prevMonthCount = new Set((prevMonthData ?? []).map(v => v.date)).size;
 
       if (lang === "en") {
         const engMonth = getEnglishMonthName(currM);
@@ -288,13 +288,14 @@ const server = http.createServer(async (req, res) => {
       const data = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("username")
-          .eq("month", thisMonth)
+          .select("username, date")
+          .like("date", `${thisMonth}%`)
       );
 
       const count = {};
       (data ?? []).forEach(d => {
-        count[d.username] = (count[d.username] || 0) + 1;
+        const u = d.username.toLowerCase();
+        count[u] = (count[u] || 0) + 1;
       });
 
       const top = Object.entries(count)
@@ -324,13 +325,14 @@ const server = http.createServer(async (req, res) => {
       const data = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("username")
+          .select("username, date")
           .like("date", `${thisYear}%`)
       );
 
       const count = {};
       (data ?? []).forEach(d => {
-        count[d.username] = (count[d.username] || 0) + 1;
+        const u = d.username.toLowerCase();
+        count[u] = (count[u] || 0) + 1;
       });
 
       const top = Object.entries(count)
@@ -361,20 +363,23 @@ const server = http.createServer(async (req, res) => {
       const monthData = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("username")
-          .eq("month", thisMonth)
+          .select("username, date")
+          .like("date", `${thisMonth}%`)
       );
 
       const yearData = await fetchAllData(() =>
         supabase
           .from("attendance")
-          .select("username")
+          .select("username, date")
           .like("date", `${thisYear}%`)
       );
 
       const countMap = (data) => {
         const c = {};
-        (data || []).forEach(d => { c[d.username] = (c[d.username] || 0) + 1; });
+        (data || []).forEach(d => { 
+          const u = (d.username || "").toLowerCase();
+          c[u] = (c[u] || 0) + 1; 
+        });
         return c;
       };
 
