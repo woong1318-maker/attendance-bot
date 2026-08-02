@@ -18,7 +18,7 @@ function getKSTNow() {
 }
 
 // =====================
-// 게임 날짜 기준 (07:52 리셋)
+// 게임 날짜 기준 (07:50 리셋)
 // =====================
 function getGameDay() {
   const kst = getKSTNow();
@@ -30,7 +30,7 @@ function getGameDay() {
   const h = kst.getUTCHours();
   const min = kst.getUTCMinutes();
 
-  if (h < 7 || (h === 7 && min < 52)) {
+  if (h < 7 || (h === 7 && min < 50)) {
     const prev = new Date(Date.UTC(y, m, d - 1));
     y = prev.getUTCFullYear();
     m = prev.getUTCMonth();
@@ -261,7 +261,6 @@ const server = http.createServer(async (req, res) => {
         const engMonth = getEnglishMonthName(currM);
         let responseStr = `🌸${rawUser}🌸 ${engMonth}(${monthCount || 0} times)`;
         
-        // 지난달 기록이 1회 이상일 때만 추가 표시
         if (prevMonthCount > 0) {
           const prevEngMonth = getEnglishMonthName(prevM);
           responseStr += `, ${prevEngMonth}(${prevMonthCount} times)`;
@@ -271,7 +270,6 @@ const server = http.createServer(async (req, res) => {
       } else {
         let responseStr = `🌸${rawUser}🌸 ${currM}월(${monthCount || 0}회)`;
         
-        // 지난달 기록이 1회 이상일 때만 추가 표시
         if (prevMonthCount > 0) {
           responseStr += `, ${prevM}월(${prevMonthCount}회)`;
         }
